@@ -170,7 +170,7 @@ class LLMClient:
         prompt = img_task_prompt(task_info)
         output_format = ImgTaskResponse.get_prompt_format()
         payload = {
-            "model": "gpt-4o",
+            "model": "gpt-5.4",
             "messages": [
                 {
                     "role": "user",
@@ -204,10 +204,10 @@ class LLMClient:
                 data = response.json()
                 models = data.get("models", [])
                 models = [model["name"] for model in models]
-                if "gpt-4o" in models:
+                if "gpt-5.4" in models:
                     return True
                 else:
-                    logging.warning("gpt-4o model not found in local copilot tags.")
+                    logging.warning("gpt-5.4 model not found in local copilot tags.")
                     return False
             else:
                 logging.error(f"Failed to check local copilot availability: {response.status_code} - {response.text}")
