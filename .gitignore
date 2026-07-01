@@ -71,3 +71,16 @@ pywinauto-mcp-server/conf/pywinauto_conf.json
 docs/node_modules/
 docs/dist/
 website/
+
+# Claude Code project-local settings
+.trendpower/
+
+# MCP server runtime logs
+**/logs/
+*.log
+
+# excelio portalocker lock files
+*.lock
+
+# trendpower runtime home (checkpoints, runs, sessions, blueprint outputs)
+# (the config under ~/.trendpower/ is outside the repo)

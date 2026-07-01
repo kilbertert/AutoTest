@@ -1,0 +1,27 @@
+[project]
+name = "excelio-mcp-server"
+version = "0.1.0"
+description = "MCP Server for reading/writing .xlsx test-case blueprints (thin shell over openpyxl + zip+xml)"
+authors = [
+    {name = "AutoGenesis Team"}
+]
+requires-python = ">=3.10"
+dependencies = [
+  "mcp>=1.23.0",
+  "pydantic>=2.0",
+  "openpyxl>=3.1.5",
+  "portalocker>=2.7",
+]
+
+[tool.setuptools.packages.find]
+include = ["tools*", "utils*"]
+exclude = ["logs*"]
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=6.0.0",
+]
+
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"

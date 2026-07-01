@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}'; img-src data:;" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Trendpower Sidebar</title>
+  <link rel="stylesheet" href="${stylesUri}" />
+</head>
+<body>
+  <header class="tp-header">
+    <div class="tp-title">Trendpower</div>
+    <div class="tp-badges" id="badges">
+      <span class="tp-badge" id="badge-uv">uv: …</span>
+      <span class="tp-badge" id="badge-tp">trendpower: …</span>
+      <span class="tp-badge" id="badge-mcp">mcp: …</span>
+    </div>
+    <div class="tp-errors" id="errors" hidden></div>
+  </header>
+
+  <section class="tp-prompt">
+    <textarea id="prompt" rows="4" placeholder="Describe what to test in natural language&#10;e.g. 看看 Apifox Tikhub 项目里有哪些 health 相关的接口，测一下健康检查接口"></textarea>
+    <div class="tp-actions">
+      <button id="btn-run" class="tp-btn primary" disabled>Run</button>
+      <button id="btn-stop" class="tp-btn" disabled>Stop</button>
+      <button id="btn-clear" class="tp-btn">Clear</button>
+    </div>
+  </section>
+
+  <section class="tp-log" id="log" aria-live="polite"></section>
+
+  <footer class="tp-footer">
+    <div id="status" class="tp-status">idle</div>
+    <a href="#" id="link-home" class="tp-link">Open ~/.trendpower</a>
+  </footer>
+
+  <script nonce="${nonce}" src="${scriptUri}"></script>
+</body>
+</html>

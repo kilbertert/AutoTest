@@ -1,0 +1,39 @@
+[project]
+name = "api-mcp-server"
+version = "0.1.0"
+description = "MCP Server for API testing with BDD AI Toolkit"
+authors = [
+    {name = "AutoGenesis Team"}
+]
+requires-python = ">=3.10"
+dependencies = [
+  "httpx>=0.27.0",          # HTTP 客户端（支持 async）
+  "mcp>=1.23.0",            # MCP SDK
+  "jsonpath-ng>=1.6.0",     # JSONPath 表达式解析
+  "jsonschema>=4.20.0",     # JSON Schema 验证
+  "langchain>=0.1.20",      # LLM 集成
+  "langchain-openai>=0.0.8",
+  "langchain-anthropic>=0.0.8",
+  "langchain-google-genai>=0.0.8",
+  "google-generativeai>=0.4.0",
+  "anthropic>=0.22.0",
+  "openai>=1.0.0",
+  "pyyaml>=6.0",            # OpenAPI YAML 解析
+  "watchdog>=3.0.0",        # 配置文件热重载
+]
+
+[tool.setuptools.packages.find]
+include = ["utils*", "tools*", "llm*"]
+exclude = ["logs*", "conf*"]
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=6.0.0",
+    "black>=21.0.0",
+    "flake8>=3.8.0",
+    "mypy>=0.900",
+]
+
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"

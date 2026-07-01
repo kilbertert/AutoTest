@@ -1,10 +1,10 @@
 {
     "PYWINAUTO_CONFIG": {
         "apps_config": {
-            "# app name": {
-                "exe": "# app exe path",
-                "window_title_re": "# window title regex",
-                "launch_args": ["# app launch arguments, e.g. --remote-debugging-port for edge"]
+            "edge": {
+                "exe": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+                "window_title_re": ".*Edge.*",
+                "launch_args": ["--new-window"]
             }
         }
     }
