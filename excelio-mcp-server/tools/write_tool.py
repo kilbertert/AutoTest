@@ -15,7 +15,12 @@ from typing import Any, Dict, List, Optional
 
 from mcp.server.fastmcp import FastMCP
 
-from excel_io import ExcelError, append_rows, create_blueprint, update_cells
+from excel_io import (
+    ExcelError,
+    append_rows as append_rows_io,
+    create_blueprint as create_blueprint_io,
+    update_cells as update_cells_io,
+)
 from utils.logger import log_tool_call, logger
 from utils.response_format import format_tool_response, init_tool_response
 
@@ -42,7 +47,7 @@ def register_write_tools(mcp: FastMCP):
         """
         resp = init_tool_response()
         try:
-            result = create_blueprint(path, template_header, extra_header)
+            result = create_blueprint_io(path, template_header, extra_header)
             resp["status"] = "success"
             resp["data"] = result
         except ExcelError as e:
@@ -76,7 +81,7 @@ def register_write_tools(mcp: FastMCP):
             if not rows:
                 resp["error"] = "rows is empty"
                 return format_tool_response(resp)
-            result = append_rows(path, sheet, rows)
+            result = append_rows_io(path, sheet, rows)
             resp["status"] = "success"
             resp["data"] = result
         except FileNotFoundError:
@@ -114,7 +119,7 @@ def register_write_tools(mcp: FastMCP):
             if not updates:
                 resp["error"] = "updates is empty"
                 return format_tool_response(resp)
-            result = update_cells(path, sheet, updates)
+            result = update_cells_io(path, sheet, updates)
             resp["status"] = "success"
             resp["data"] = result
         except FileNotFoundError:

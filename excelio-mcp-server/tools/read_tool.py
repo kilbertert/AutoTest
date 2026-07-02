@@ -13,7 +13,13 @@ from typing import Any, Dict, List, Optional
 
 from mcp.server.fastmcp import FastMCP
 
-from excel_io import ExcelError, get_module_map, list_sheets, read_header, read_sheet
+from excel_io import (
+    ExcelError,
+    get_module_map as get_module_map_io,
+    list_sheets as list_sheets_io,
+    read_header as read_header_io,
+    read_sheet as read_sheet_io,
+)
 from utils.logger import log_tool_call, logger
 from utils.response_format import format_tool_response, init_tool_response
 
@@ -30,7 +36,7 @@ def register_read_tools(mcp: FastMCP):
         """
         resp = init_tool_response()
         try:
-            sheets = list_sheets(path)
+            sheets = list_sheets_io(path)
             resp["status"] = "success"
             resp["data"] = {"sheets": sheets, "path": path}
         except FileNotFoundError as e:
@@ -50,7 +56,7 @@ def register_read_tools(mcp: FastMCP):
         """
         resp = init_tool_response()
         try:
-            header = read_header(path, sheet)
+            header = read_header_io(path, sheet)
             resp["status"] = "success"
             resp["data"] = {"header": header, "columns": len(header), "sheet": sheet}
         except FileNotFoundError:
@@ -92,7 +98,7 @@ def register_read_tools(mcp: FastMCP):
                     "start": int(start_row or 1),
                     "end": int(end_row or 10**9),
                 }
-            rows = read_sheet(path, sheet, row_range=row_range)
+            rows = read_sheet_io(path, sheet, row_range=row_range)
             resp["status"] = "success"
             resp["data"] = {"rows": rows, "count": len(rows), "sheet": sheet}
         except FileNotFoundError:
@@ -118,7 +124,7 @@ def register_read_tools(mcp: FastMCP):
         """
         resp = init_tool_response()
         try:
-            entries = get_module_map(path, sheet)
+            entries = get_module_map_io(path, sheet)
             modules = sorted({e["module"] for e in entries if e["module"]})
             resp["status"] = "success"
             resp["data"] = {

@@ -60,6 +60,11 @@ def _load_shared_strings(zf: zipfile.ZipFile) -> List[str]:
 
 def _sheet_xml_name_for(zf: zipfile.ZipFile, sheet_name_or_index) -> str:
     """Resolve a user-supplied sheet name or 1-based index to its xl/worksheets/sheetN.xml path."""
+    # Coerce numeric strings to int — FastMCP passes unannotated params as str,
+    # so an LLM sending sheet=1 arrives as "1" and would otherwise be treated as
+    # a (non-matching) sheet name rather than a 1-based index.
+    if isinstance(sheet_name_or_index, str) and sheet_name_or_index.strip().isdigit():
+        sheet_name_or_index = int(sheet_name_or_index)
     wb_root = ET.fromstring(zf.read("xl/workbook.xml"))
     sheets: List[Tuple[str, str]] = []  # (name, rId)
     for s in wb_root.iter(NS + "sheet"):

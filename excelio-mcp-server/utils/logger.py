@@ -59,12 +59,17 @@ def log_tool_call(func):
         logger.info(f"Tool Call - Start - ID: {call_id} - Tool: {tool_name} - Parameters: {json.dumps(kwargs, ensure_ascii=False)}")
         try:
             result = await func(*args, **kwargs)
-            if isinstance(result, str):
+            # Parse a COPY for log-level classification only — never mutate the
+            # return value. FastMCP validates the tool's return against its `-> str`
+            # annotation, so returning a dict here (from json.loads) would break
+            # output validation ("result should be a valid string").
+            parsed = result
+            if isinstance(parsed, str):
                 try:
-                    result = json.loads(result)
+                    parsed = json.loads(parsed)
                 except (json.JSONDecodeError, ValueError):
-                    pass
-            is_error_result = isinstance(result, dict) and result.get('status') == 'error'
+                    parsed = None
+            is_error_result = isinstance(parsed, dict) and parsed.get('status') == 'error'
             if is_error_result:
                 logger.error(f"Tool Call - Error Result - ID: {call_id} - Tool: {tool_name}")
             else:
