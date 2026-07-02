@@ -228,6 +228,43 @@ For each UI surface in the module, record:
 - **Reload login state every 50 cases** within a module (see Stage 4.6)
 - Tab crash → open a new tab for remaining cases of that module; checkpoint records progress
 
+### 2.6 CDP target resilience (HARD requirement for qumall SPA)
+
+qumall uses an SPA (Vue + hash routing) — every menu click changes `location.hash`
+without a full reload. This causes chrome-devtools-mcp's CDP target to detach
+mid-call, surfacing as `Protocol error (Page.*): Target closed`. **Naive tool
+sequences will break.** Always:
+
+1. **Maintain a `current_page_id` variable** in your head — every chrome-devtools
+   tool that touches the page (navigate_page / take_snapshot / take_screenshot /
+   click / fill / evaluate_script / wait_for / ...) implicitly targets whichever
+   tab is currently selected.
+2. **Before any operation, do:**
+   ```
+   pages = chrome-devtools__list_pages()
+   if not any(p.pageId == current_page_id for p in pages.pages):
+       # our tab vanished — recover
+       current_page_id = chrome-devtools__new_page(url=last_known_url)
+   chrome-devtools__select_page(pageId=current_page_id)
+   ```
+3. **After any operation, verify the result includes a real page snapshot or
+   element** — if you got `"is_error": true` with `Target closed`, immediately
+   call `list_pages`, re-select or re-open, then **retry the original tool
+   call once**. If still failing, log it and skip that case.
+4. **Prefer `navigate_page(url)` over menu clicks** when the URL is known.
+   SPA route changes via `evaluate_script("location.hash = '...'")` are
+   especially brittle — use `navigate_page` instead.
+5. **Batch reads — don't snapshot-then-click-then-snapshot in tight loops.**
+   Take one snapshot at the start of a case, derive all uids from it, run all
+   clicks, then take ONE final snapshot to verify.
+
+### 2.7 Stable page-id across resume
+
+On `--resume`, the chrome-devtools server may or may not retain the old tabs
+(it depends on whether the server crashed too or just the agent process).
+Always start resume with `chrome-devtools__list_pages()` — if the previously
+recorded pageIds are gone, re-navigate via `new_page` rather than assuming.
+
 ---
 
 ## Stage 3 — Design cases into the blueprint
@@ -303,15 +340,31 @@ Iterate all cases in the blueprint, **one at a time**, in the matching module ta
 
 ### 4.1 Per case
 
+**Before EVERY case, run the target-resilience guard:**
+```
+pages = chrome-devtools__list_pages()
+current = next((p for p in pages.pages if p.url contains expected_module_path), None)
+if current is None:
+    current_page_id = chrome-devtools__new_page(url=last_known_module_url).pageId
+else:
+    current_page_id = current.pageId
+    chrome-devtools__select_page(pageId=current_page_id)
+```
+
+Then per case:
 ```
 1. Parse col 11 (测试步骤) into ordered operations (split on "; " or "1. 2. 3.")
-2. For each operation:
+2. Take ONE snapshot at the start of the case; derive all uids from it
+3. For each operation:
    a. Identify target element — prefer col 16 (UI_selector) recorded at design;
-      fall back to take_snapshot() to get a fresh uid if the recorded selector is stale
+      fall back to fresh uid if the recorded selector is stale
    b. chrome-devtools__click(uid=...) / chrome-devtools__fill(uid, value) /
       chrome-devtools__fill_form(values) / chrome-devtools__type_text(uid, text) / ...
-   c. If a captcha appears, see "Captcha handling" below
-3. After all steps, read the resulting state:
+   c. If the tool result has is_error=true with "Target closed":
+      → call list_pages, re-select or re-open, RETRY the operation ONCE
+      → if retry also fails, mark this case 跳过, continue
+   d. If a captcha appears, see "Captcha handling" below
+4. After all steps, read the resulting state:
    - chrome-devtools__take_snapshot() to compare with col 12 (预期结果)
    - chrome-devtools__evaluate_script("() => document.body.innerText") for text matching
    - chrome-devtools__list_network_requests() to verify expected AJAX calls
@@ -449,6 +502,7 @@ Top 5 失败原因:
 8. **Storage state at `~/.trendpower/qumall_state.json`** — if missing, STOP and ask the user to provide it.
 9. **Browser headless mode is OFF by default** — visual OCR needs visible Chrome. If user wants headless, plan a fallback first (ddddocr local OCR).
 10. **The sample_size escape hatch exists for a reason** — if unsure about cost, design + run 50 first.
+11. **CDP target resilience is mandatory on qumall** — every chrome-devtools call site must follow the guard in §2.6. SPA route changes detach the CDP target; "Target closed" is normal, not exceptional. Skip (not fail) the case if retry also fails.
 
 ## Known unknowns (flag these to the user immediately)
 

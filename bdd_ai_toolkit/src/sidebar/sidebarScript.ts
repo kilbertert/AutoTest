@@ -45,6 +45,14 @@ type RunnerEvent =
   | { kind: "module_status"; module: string; state: "pending" | "running" | "passed" | "failed" }
   | { kind: "error"; message: string; trace?: string };
 
+interface CheckpointInfo {
+  runId: string;
+  savedAt: number;
+  messages: number;
+  progress: any;
+  lastUrl: string | null;
+}
+
 interface RunnerEnded {
   runId: string;
   ok: boolean;
@@ -76,6 +84,10 @@ const progressText = $<HTMLSpanElement>("progress-text");
 const progressFailed = $<HTMLSpanElement>("progress-failed");
 const progressFill = $<HTMLDivElement>("progress-fill");
 const progressModules = $<HTMLUListElement>("progress-modules");
+const btnResume = $<HTMLButtonElement>("btn-resume");
+const resumeMenuEl = $<HTMLDivElement>("resume-menu");
+const resumeListEl = $<HTMLUListElement>("resume-list");
+const resumeEmptyEl = $<HTMLDivElement>("resume-empty");
 
 // ─── State ─────────────────────────────────────────────────────────────
 
@@ -117,6 +129,20 @@ linkHome.addEventListener("click", (e) => {
   vscode.postMessage({ command: "openTrendpowerHome" });
 });
 
+btnResume.addEventListener("click", () => {
+  if (resumeMenuEl.hidden) {
+    vscode.postMessage({ command: "listCheckpoints" });
+  } else {
+    resumeMenuEl.hidden = true;
+  }
+});
+
+document.addEventListener("click", (e) => {
+  if (!resumeMenuEl.hidden && !resumeMenuEl.contains(e.target as Node) && e.target !== btnResume) {
+    resumeMenuEl.hidden = true;
+  }
+});
+
 // ─── Inbound messages ─────────────────────────────────────────────────
 
 window.addEventListener("message", (event) => {
@@ -127,9 +153,49 @@ window.addEventListener("message", (event) => {
     case "runnerStarted":    onRunnerStarted(msg.info as RunnerStarted); break;
     case "runnerEvent":      onRunnerEvent(msg.event as RunnerEvent); break;
     case "runnerEnded":      onRunnerEnded(msg.info as RunnerEnded); break;
+    case "checkpointList":   renderResumeMenu(msg.list as CheckpointInfo[]); break;
     case "prefillPrompt":    promptEl.value = String(msg.prompt ?? ""); break;
   }
 });
+
+function renderResumeMenu(list: CheckpointInfo[]): void {
+  resumeMenuEl.hidden = false;
+  resumeListEl.innerHTML = "";
+  if (!list || list.length === 0) {
+    resumeEmptyEl.hidden = false;
+    return;
+  }
+  resumeEmptyEl.hidden = true;
+  for (const cp of list) {
+    const li = document.createElement("li");
+    li.dataset.runId = cp.runId;
+    const id = document.createElement("div");
+    id.className = "run-id";
+    id.textContent = cp.runId;
+    li.appendChild(id);
+    const meta = document.createElement("div");
+    meta.className = "run-meta";
+    const dt = cp.savedAt ? new Date(cp.savedAt * 1000).toLocaleString() : "unknown";
+    const p = cp.progress || {};
+    const pstr = (p.done || p.total) ? `${p.done || 0}/${p.total || 0} done` : "";
+    const url = cp.lastUrl ? new URL(cp.lastUrl).pathname : "";
+    meta.textContent = `${dt} · ${cp.messages} msg${pstr ? " · " + pstr : ""}${url ? " · " + url : ""}`;
+    li.appendChild(meta);
+    li.addEventListener("click", () => {
+      resumeMenuEl.hidden = true;
+      // Synthesize a resume prompt: nudge the agent to read the blueprint's
+      // col 14 and continue from the first un-executed row.
+      const resumePrompt = `继续执行 run_id=${cp.runId} 的后续步骤：先 chrome-devtools__list_pages 看现有标签，没有就新开一个回到 ${cp.lastUrl || "上一个模块"}；然后读蓝图列 14 找到第一条执行结果为空的行，从那里继续。如果模块设计未完成则补完后继续。`;
+      vscode.postMessage({
+        command: "submitPrompt",
+        prompt: resumePrompt,
+        resumeFrom: cp.runId,
+        skill: "qumall-fulltest",
+      });
+    });
+    resumeListEl.appendChild(li);
+  }
+}
 
 // ─── Handlers ─────────────────────────────────────────────────────────
 
@@ -149,6 +215,9 @@ function onHealth(h: HealthUpdate): void {
 
   // Enable Run only if uv + trendpower are usable. MCP is informational.
   btnRun.disabled = !(h.uv && h.trendpower);
+  // Resume is always available (no env gate) — it reads checkpoints and
+  // spawns the same runner.
+  btnResume.disabled = false;
 }
 
 function onRunnerStarted(info: RunnerStarted): void {
