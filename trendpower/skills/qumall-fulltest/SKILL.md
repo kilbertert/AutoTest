@@ -19,7 +19,56 @@ description: |
 
   Required MCP servers: `excelio` (read template + create/write blueprint) +
   `chrome-devtools` (drive Chrome). Optional: `api-mcp` for AJAX assertions.
+
+  Coverage matrix (Stage 3): every run designs cases along 5 dimensions —
+  **业务流程 / 数据驱动 / 权限矩阵 / 异常路径 / 审计合规** — not just smoke.
+  Stage 1.5 also reads real cases from the example `测试用例.xlsx` for the
+  same module and feeds them as few-shot samples to keep style consistent
+  with human-authored cases.
 ---
+
+# qumall business context (for Stage 3 design prompt)
+
+qumall is a **S2B2C 充电桩运营后台** (Supplier-to-Business-to-Consumer).
+Adapt the test vocabulary to this domain — do **not** write generic "登录成功"
+cases; write cases that exercise the business semantics.
+
+## User roles (权限矩阵 — Stage 3.2 must cover ≥2 roles per module)
+- **总平台运营** (`platform`): 全模块可见 + 全权限
+- **区域代理** (`region`): 仅看本区域商家 + 设备 + 订单
+- **商家** (`merchant`): 仅看自己入驻的数据 + 自己设备 + 自己订单
+- **财务** (`finance`): 仅看账单/分账/对账模块，只读
+- **游客** (`guest`): 无登录态，只能访问公开页
+
+## Core business flow (业务流程 — Stage 3.2 must cover E2E happy + E2E rollback)
+```
+商家入驻申请 → 平台审核(待审/通过/拒绝/撤销) → 签约(合同/分成比例/账期) →
+设备登记(充电桩/型号/功率/位置) → 上线(扫码/插枪/启动/计费) →
+订单生成(按计费规则) → 自动分账(平台/代理/商家比例) →
+对账(T+1 出账单) → 提现(申请/审核/到账) → 异常处理(退款/申诉/调账)
+```
+
+## Module-to-case mapping (Stage 3.2 must hit each module's typical cases)
+| Module | 必有 case 类型 |
+|---|---|
+| 登录 | 验证码 3 次失败锁定、记住登录失效、踢人下线、SSO |
+| 首页 | 多角色首页数据范围、按区域筛选、待办事项跳转准确性 |
+| 商家入驻 | 资质上传/审核状态机/拒绝理由回填/重新提交 |
+| 设备管理 | 设备新增/上线/故障/离线、扫码绑定、解绑 |
+| 计费规则 | 时段计费/峰谷电价/封顶值/功率阶梯 |
+| 订单/账单 | 跨月分账/T+1 出账/对账差异/退款流程 |
+| 财务/分账 | 比例调整追溯、提现手续费、税务字段 |
+| 系统管理 | 操作日志、权限变更追溯、敏感字段脱敏 |
+
+## Glossary (use these terms literally in test titles)
+**计费规则**: 时段/峰平谷/封顶/服务费/阶梯电价
+**订单**: 充电订单/预约订单/退款单/调账单
+**分账**: 平台抽成/代理抽成/商家实收/T+N 到账
+**设备**: 充电桩/充电柜/编号/SN/IMEI/固件版本
+**资质**: 营业执照/银行账户/法人身份证/场地证明
+**状态机**: 待审 → 审核中 → 通过/拒绝 → 已撤销/已签约
+**对账**: 平台账单/商家账单/差异单/补单
+
 
 # qumall-fulltest workflow
 
@@ -168,6 +217,62 @@ for mod in module_map.modules:
 
 ---
 
+## Stage 1.5 — Sample-driven reference (few-shot from real cases)
+
+The example `测试用例.xlsx` contains ~3591 real cases covering 30 modules.
+These are written by QA in the exact 16-column structure the blueprint needs,
+and use domain-correct terminology (计费规则/分账/状态机 etc.). **Without
+learning from these samples the agent invents bland cases like "页面正常加载"
+— exactly the failure mode reported in W2 user feedback.**
+
+### 1.5.1 Pick the same-module sample window
+
+For each `(module, function)` pair you'll design in Stage 3, pull 3-6 real
+existing cases as reference. Fastest: read sheet 1 with a large `max_rows`,
+filter to the current module, take the first N. Do this **inside** Stage 1.5
+(concurrent with Stage 2 exploration), not in Stage 3, so the samples stay
+in context for the design step.
+
+```
+excelio__read_sheet(path="测试用例.xlsx", sheet=1, max_rows=200)
+→ returns rows 2..201 with col 3 = 模块 name
+# filter in-memory: keep rows where col 3 (模块) == <current module>
+# group by col 4 (功能) to spread coverage
+→ sample_for_module[mod][function] = [3-6 rows]
+```
+
+For modules missing in the sample (rare; qumall's 30 modules all exist), fall
+back to the closest semantic module's samples and explicitly note the gap.
+
+### 1.5.2 Build the "sample bank" the design prompt references
+
+Concatenate per-module rows into a compact text block, max **~200 tokens per
+module** (otherwise it overpowers the prompt budget on big modules):
+
+```
+sample_bank[mod][func] = [
+  "TC001 | 登录 | 账号不存在场景 | 输入未注册账号登录 → 提示「账号不存在」,不暴露注册接口",
+  "TC002 | 登录 | 验证码错误3次锁定 | 连续3次输入错误验证码 → 锁定15分钟,前端倒计时",
+  "TC003 | 商家入驻 | 营业执照号重复 | 上传已存在的营业执照 → 后端返回重复,前端红字提示",
+  ...
+]
+```
+
+Keep **titles verbatim** from the sample — they encode the real business
+wording (e.g. "营业执照号重复" is far better than "上传证件校验"). The LLM
+copies this style into its own generated cases.
+
+### 1.5.3 Anti-pattern guard
+
+When the agent sees good samples, it rarely regresses to "页面正常加载". Add
+this hard rule to the Stage 3 prompt:
+
+> Every case title MUST start with one of these prefixes:
+> `[正常] [异常] [边界] [权限] [流程] [审计] [并发] [兼容]`
+> Reject any title that starts with `页面` `功能` `正常显示` `加载`.
+
+---
+
 ## Stage 2 — UI exploration (per module)
 
 For each `(module, function)` from Stage 1.2:
@@ -271,18 +376,49 @@ For each UI surface in the module, record:
 
 ---
 
-## Stage 3 — Design cases into the blueprint
+## Stage 3 — Design cases into the blueprint (5-dimension coverage matrix)
 
-For each module's UI surfaces found in Stage 2, design test cases. Write them
-into the blueprint via `excelio__append_rows`. Design coverage targets:
+For each module's UI surfaces (Stage 2) plus its sample bank (Stage 1.5),
+design test cases **along 5 mandatory dimensions**. The agent must produce
+a target **N ≥ 30 cases per module** (not 3-5 — that produces "冒烟" only).
+If `sample_size < 30`, scale down proportionally but keep all 5 dimensions.
 
-- **Happy path** per function (1-3 cases)
-- **Field validation** per form field (empty / too long / wrong format / boundary)
-- **Boundary** cases for pagination (page 1, last page, beyond-last)
-- **Permission** cases if the module has role-gated actions
-- **Concurrent / state** cases (e.g. submit twice rapidly, submit then navigate away)
+### 3.1 The 5 dimensions (mandatory, per module)
 
-### 3.1 Build rows
+| Dim | Tag | Count per module | What it tests |
+|---|---|---|---|
+| **业务流 (Flow)** | `[流程]` `[正常]` | 6-10 | E2E happy: 商家入驻→审核→签约→设备→订单→分账→对账→提现;每环节 1-2 条 |
+| **数据驱动 (Data)** | `[边界]` `[异常]` | 8-12 | 金额边界(0/0.01/99999.99/负数/小数位)/超长字符串(>255,>4000)/特殊字符(XSS/SQL 注入)/分页边界/跨年跨月 |
+| **权限矩阵 (Perm)** | `[权限]` | 4-6 | ≥2 个角色的菜单可见性 + 按钮可点性 + 数据范围; 越权访问被拒 |
+| **异常路径 (Except)** | `[异常]` `[并发]` | 6-8 | 网络中断/超时/服务降级/并发双开同一单据/状态机非法跃迁/已审回到待审 |
+| **审计合规 (Audit)** | `[审计]` `[兼容]` | 4-6 | 操作日志产生/敏感字段脱敏(身份证/银行卡/手机号)/改密后旧 token 失效/多端互踢 |
+
+每维度 title 必须以方括号标签开头（见下）。**禁止**冒烟式标题如 "页面正常加载"。
+
+### 3.2 Title template (copy this style from sample bank)
+
+```
+[流程] <业务动作>:<预期结果>
+[异常] <触发条件>:<系统响应>
+[边界] <输入值>:<预期行为>
+[权限] <角色>访问<资源>:<允许/拒绝+原因>
+[审计] <操作>:<日志/脱敏检查点>
+[并发] <同时操作>:<冲突处理>
+```
+
+Good (real style): `[流程] 商家资质审核通过→设备登记→充电订单→分账:全链路账目一致`
+Bad (banned): `登录功能`、`页面正常显示`、`搜索功能正常`
+
+### 3.3 Per-module design recipe
+
+For each `(module, function)` pair:
+
+1. Pull sample cases for `(module, function)` from `sample_bank` (Stage 1.5)
+2. For each of the 5 dimensions, generate **≥ 1 case per function** (so a module with K functions → at least 5×K cases). If a dimension doesn't apply (e.g. 财务模块没"权限矩阵"因为人人能看自己账单), document the skip explicitly.
+3. Cross-link via UI flow: if `[流程] 入驻审核` creates data that `[边界] 分页` displays, write the boundary case against THAT data
+4. Mark `UI_selector` (col 16) per the Stage 2 enumeration
+
+### 3.4 Build rows (excelio__append_rows, single batch per module)
 
 ```python
 new_rows = []
@@ -295,28 +431,48 @@ for case in designed_cases:
         function,                          # 4  功能
         subfunction,                       # 5  子功能
         priority,                          # 6  优先级 "高"/"中"/"低"
-        "场景法",                           # 7  测试方法
-        title,                             # 8  用例标题
+        test_method,                       # 7  测试方法  场景法/等价类/边界值/...
+        title,                             # 8  用例标题 **必须 [标签] 开头**
         preconditions,                     # 9  前置条件
         test_data,                         # 10 测试数据
         steps,                             # 11 测试步骤 "1. ...; 2. ...; 3. ..."
         expected,                          # 12 预期结果
         "auto",                            # 13 编写人
-        "",                                # 14 执行结果 (empty at design)
-        "",                                # 15 备注 (empty at design)
-        primary_selector,                  # 16 UI_selector (stable CSS / role+text)
-        "",                                # 17 截图路径 (empty at design)
+        "",                                # 14 执行结果
+        "",                                # 15 备注
+        primary_selector,                  # 16 UI_selector
+        "",                                # 17 截图路径
     ]
     new_rows.append(row)
 
+# 一次 append, 一模块一批; tools/MCP 节省 round-trip
 excelio__append_rows(path=blueprint_path, sheet=1, rows=new_rows)
 ```
 
-### 3.2 Tell the user the blueprint path (do NOT block)
+Priority distribution (rule of thumb, scale per module criticality):
+- **高** 30% (blocking / financial / cross-module)
+- **中** 50% (feature correctness)
+- **低** 20% (cosmetic / UI consistency)
+
+Test method distribution: 场景法 40% / 等价类+边界值 30% / 状态转换 15% / 错误猜测 15%.
+
+### 3.5 Self-check before Stage 3 end
+
+Before you emit the "stage 3 done" message, walk this checklist:
+
+- [ ] Every module has cases in **all 5 dimensions** (or explicit skip reason)
+- [ ] Title column starts with `[标签]` for 100% of cases
+- [ ] At least 2 different user roles covered in permission cases
+- [ ] E2E flow cross-module linkage: at least 1 case in 设备管理 references data from 入驻审核
+- [ ] Total N ≥ 30 per module × M modules
+
+If any check fails → **re-design** that module's cases before emitting.
+
+### 3.6 Tell the user the blueprint path (do NOT block)
 
 After all modules are designed, emit:
 ```
-emit assistant_text: "蓝图已生成: <blueprint_path>\n共 N 条用例，覆盖 M 个模块。开始执行..."
+emit assistant_text: "蓝图已生成: <blueprint_path>\n共 N 条用例，覆盖 M 个模块 × 5 维度。开始执行..."
 report_progress(done=0, total=<N>, failed=0)
 ```
 
@@ -332,7 +488,7 @@ SPA-switching race that killed Stage 2 will absolutely happen during Stage 4's
 per-case clicks. Apply the `list_pages` / `select_page` / `wait_for` discipline
 on every chrome-devtools call inside the case loop.
 
-### 3.3 Reload the blueprint into memory
+### 3.7 Reload the blueprint into memory
 
 ```
 excelio__read_sheet(path=blueprint_path, sheet=1, range={"max_rows": 5000})
