@@ -145,6 +145,27 @@ The blueprint starts empty (header row only). Stages 2-3 will fill it.
 emit status phase="blueprint_created" detail="<blueprint path>"
 ```
 
+### 1.4 Reporting tools (built into the runner — NOT MCP)
+
+The runner registers two plain function tools the sidebar listens to. Call them
+throughout the workflow to drive the progress bar + module chips:
+
+- `report_progress(done, total, failed=0, module?)` — sets/updates the case
+  counter. Call once after Stage 3 with `done=0, total=<N>` to set the total,
+  then after every executed case in Stage 4.
+- `report_module_status(module, state)` — `state` ∈ `pending` | `running` |
+  `passed` | `failed`. Call when starting / finishing each module.
+
+These are **not** `excelio__*` or `chrome-devtools__*` tools — they have no
+prefix. They exist purely to surface progress to the UI; they return `{ok:true}`
+and change no files.
+
+After Stage 1.2, seed the module chips:
+```
+for mod in module_map.modules:
+    report_module_status(module=mod, state="pending")
+```
+
 ---
 
 ## Stage 2 — UI exploration (per module)
@@ -157,6 +178,7 @@ For each `(module, function)` from Stage 1.2:
 chrome-devtools__new_page()
 chrome-devtools__select_page(pageId=<new>)
 chrome-devtools__resize_page(1440, 900)
+report_module_status(module=<module>, state="running")
 ```
 
 ### 2.2 Navigate to the module
@@ -254,7 +276,11 @@ excelio__append_rows(path=blueprint_path, sheet=1, rows=new_rows)
 After all modules are designed, emit:
 ```
 emit assistant_text: "蓝图已生成: <blueprint_path>\n共 N 条用例，覆盖 M 个模块。开始执行..."
+report_progress(done=0, total=<N>, failed=0)
 ```
+
+Setting `total` here initializes the sidebar progress bar (0 / N) before
+execution starts.
 
 Then **immediately continue to Stage 4**. Do not wait for user confirmation —
 the user can open the blueprint file in Excel alongside the run if they want
@@ -298,33 +324,39 @@ Iterate all cases in the blueprint, **one at a time**, in the matching module ta
      {row: case.row, col: 15, value: "<failure reason, ≤ 200 chars>" or ""},
      {row: case.row, col: 17, value: "<screenshot path>"}    # only on failure
    ])
+6. Report progress to the UI:
+   report_progress(done=<done+1>, total=<total>, failed=<failed + (1 if 失败 else 0)>, module=<current module>)
 ```
 
 ### 4.2 Per-case progress event
 
-After every case, the runner.py extension emits a `progress` event (W2 auto-emits on `excelio__update_cells`). For W1, you may also surface a heartbeat:
-```
-emit status phase="case_done" detail="<module>/<case_id>: 通过"
-```
+`report_progress` (called in step 6 above) is the single source of truth for the
+sidebar progress bar. Call it after **every** case — the runner also snapshots
+the transcript + progress to `~/.trendpower/checkpoints/<run_id>.json` after
+every tool_result, so a crash never costs more than one case.
 
-### 4.3 Checkpoint every 10 cases
-
-Write `~/.trendpower/checkpoints/<run_id>.json`:
-```json
-{
-  "run_id": "<runId>",
-  "stage": 4,
-  "blueprint_path": "<blueprint_path>",
-  "current_module": "登录",
-  "done": 23,
-  "failed": 2,
-  "total": 3020,
-  "last_case_row": 25,
-  "case_results": [{"row": 2, "status": "通过"}, ...]
-}
+When the last case of a module finishes:
+```
+report_module_status(module=<module>, state="passed")   # if no failures
+# or
+report_module_status(module=<module>, state="failed")   # if any case failed
 ```
 
-This is the source of truth for `--resume` (W2). For W1, write it but don't rely on auto-resume yet.
+### 4.3 Checkpoint & resume (automatic)
+
+You do **not** write checkpoints yourself. The runner auto-saves
+`~/.trendpower/checkpoints/<run_id>.json` after every tool result (transcript +
+last `report_progress`/`report_module_status` snapshot). On a hard crash or
+user stop, the user resumes with:
+
+```
+runner --resume <run_id> --prompt "继续执行 blueprint 里未完成的用例"
+```
+
+On resume, the runner reloads the transcript and re-emits the last
+`progress` + per-module `module_status` events so the sidebar restores its
+state. Your first action on resume should be to read the blueprint's col 14 to
+find the first row where 执行结果 is still empty, and continue from there.
 
 ### 4.4 Error recovery
 
@@ -412,8 +444,8 @@ Top 5 失败原因:
 3. **Use anthropic provider only** — OpenAI provider silently drops image content; captcha OCR will fail silently.
 4. **One tab per module** — never share tabs across modules (state contamination).
 5. **Design before execute** — Stage 3 must complete for all modules before Stage 4 starts on any module.
-6. **Checkpoint every 10 cases** — without this, a crash costs 10+ cases of work.
-7. **The runner.py `--resume` flag (W2 feature) is the only way to resume after a hard crash** — for W1, if the user kills the run, they start over.
+6. **Call `report_progress` after every case** — it drives the sidebar progress bar AND triggers the runner's auto-checkpoint. Skipping it means the UI goes dark and a crash may cost more work.
+7. **`--resume <run_id>` restores the transcript + progress** — the runner auto-saves after every tool result. On resume, re-read the blueprint's col 14 to find the first un-executed row and continue.
 8. **Storage state at `~/.trendpower/qumall_state.json`** — if missing, STOP and ask the user to provide it.
 9. **Browser headless mode is OFF by default** — visual OCR needs visible Chrome. If user wants headless, plan a fallback first (ddddocr local OCR).
 10. **The sample_size escape hatch exists for a reason** — if unsure about cost, design + run 50 first.

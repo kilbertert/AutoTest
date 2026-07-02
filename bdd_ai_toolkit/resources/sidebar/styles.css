@@ -117,6 +117,71 @@ html, body {
   border-top: 1px solid var(--vscode-sideBarSectionHeader-border);
 }
 
+.tp-progress {
+  padding: 8px 12px;
+  border-top: 1px solid var(--vscode-sideBarSectionHeader-border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.tp-progress-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+}
+.tp-progress-text {
+  font-family: var(--vscode-editor-font-family);
+  font-weight: 600;
+  color: var(--vscode-foreground);
+}
+.tp-progress-failed {
+  color: var(--vscode-testing-iconFailed);
+}
+.tp-progress-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--vscode-editorIndentGuide-background);
+  overflow: hidden;
+}
+.tp-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--vscode-testing-iconPassed);
+  transition: width 0.25s ease;
+}
+.tp-progress-fill.has-failures {
+  background: var(--vscode-editorWarning-foreground);
+}
+.tp-progress-fill.all-failed {
+  background: var(--vscode-testing-iconFailed);
+}
+.tp-modules {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.tp-modules li {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--vscode-badge-background);
+  background: var(--vscode-badge-background);
+  color: var(--vscode-descriptionForeground);
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tp-modules li.running { border-color: var(--vscode-editorInfo-foreground); color: var(--vscode-editorInfo-foreground); }
+.tp-modules li.passed  { background: var(--vscode-testing-iconPassed); color: #fff; border-color: transparent; }
+.tp-modules li.failed  { background: var(--vscode-testing-iconFailed); color: #fff; border-color: transparent; }
+.tp-modules li.pending { opacity: 0.7; }
+
 .tp-row {
   border-left: 3px solid var(--vscode-editorIndentGuide-activeBackground);
   padding: 4px 8px;

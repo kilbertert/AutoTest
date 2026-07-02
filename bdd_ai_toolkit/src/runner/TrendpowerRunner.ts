@@ -62,7 +62,7 @@ export class TrendpowerRunner {
   }
 
   /** Start a new run. Returns immediately; events stream via subscribe(). */
-  async start(prompt: string, cwd: string): Promise<void> {
+  async start(prompt: string, cwd: string, opts?: { resumeFrom?: string; skill?: string }): Promise<void> {
     if (this.state === "running" || this.state === "starting") {
       throw new Error("runner is already active; call stop() first");
     }
@@ -79,7 +79,8 @@ export class TrendpowerRunner {
     }
 
     this.state = "starting";
-    this.runId = newRunId();
+    // On resume, keep the same run id so the checkpoint filename matches.
+    this.runId = opts?.resumeFrom || newRunId();
     this.startedAt = Date.now();
     this.stderrBuf = "";
     this.lineBuf = "";
@@ -95,6 +96,16 @@ export class TrendpowerRunner {
     const uvArgs: string[] = useProject
       ? ["run", "--project", trendpowerPy, "python", runnerPy, "--prompt", prompt, "--cwd", cwd]
       : ["run", "--no-project", "python", runnerPy, "--prompt", prompt, "--cwd", cwd];
+
+    // Stable run id → checkpoint filename. Pass through so resume + new runs
+    // share the same id slot.
+    uvArgs.push("--run-id", this.runId);
+    if (opts?.resumeFrom) {
+      uvArgs.push("--resume", opts.resumeFrom);
+    }
+    if (opts?.skill) {
+      uvArgs.push("--skill", opts.skill);
+    }
 
     let proc: ChildProcessWithoutNullStreams;
     try {
@@ -253,6 +264,29 @@ export class TrendpowerRunner {
     }
     if (t === "assistant_final") {
       this.emit({ state: this.state, event: { kind: "assistant_final", text: String(obj.text ?? "") } });
+      return;
+    }
+    if (t === "progress") {
+      this.emit({
+        state: this.state,
+        event: {
+          kind: "progress",
+          done: Number(obj.done ?? 0),
+          total: Number(obj.total ?? 0),
+          failed: Number(obj.failed ?? 0),
+          module: typeof obj.module === "string" ? obj.module : undefined,
+        },
+      });
+      return;
+    }
+    if (t === "module_status") {
+      const rawState = String(obj.state ?? "pending");
+      const state: "pending" | "running" | "passed" | "failed" =
+        rawState === "running" || rawState === "passed" || rawState === "failed" ? rawState : "pending";
+      this.emit({
+        state: this.state,
+        event: { kind: "module_status", module: String(obj.module ?? ""), state },
+      });
       return;
     }
     if (t === "session_start") {

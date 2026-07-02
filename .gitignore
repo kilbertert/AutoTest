@@ -82,5 +82,8 @@ website/
 # excelio portalocker lock files
 *.lock
 
+# Excel temp lock files (when the example xlsx is open in Excel)
+~$*.xlsx
+
 # trendpower runtime home (checkpoints, runs, sessions, blueprint outputs)
 # (the config under ~/.trendpower/ is outside the repo)

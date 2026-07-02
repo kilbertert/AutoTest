@@ -20,12 +20,23 @@
   </header>
 
   <section class="tp-prompt">
-    <textarea id="prompt" rows="4" placeholder="Describe what to test in natural language&#10;e.g. 看看 Apifox Tikhub 项目里有哪些 health 相关的接口，测一下健康检查接口"></textarea>
+    <textarea id="prompt" rows="4" placeholder="Describe what to test in natural language&#10;e.g. 全面测试网站：https://admin.qumall.qushiyun.com/"></textarea>
     <div class="tp-actions">
       <button id="btn-run" class="tp-btn primary" disabled>Run</button>
       <button id="btn-stop" class="tp-btn" disabled>Stop</button>
       <button id="btn-clear" class="tp-btn">Clear</button>
     </div>
+  </section>
+
+  <section class="tp-progress" id="progress" hidden>
+    <div class="tp-progress-head">
+      <span class="tp-progress-text" id="progress-text">0 / 0</span>
+      <span class="tp-progress-failed" id="progress-failed" hidden>failed: 0</span>
+    </div>
+    <div class="tp-progress-bar">
+      <div class="tp-progress-fill" id="progress-fill"></div>
+    </div>
+    <ul class="tp-modules" id="progress-modules"></ul>
   </section>
 
   <section class="tp-log" id="log" aria-live="polite"></section>

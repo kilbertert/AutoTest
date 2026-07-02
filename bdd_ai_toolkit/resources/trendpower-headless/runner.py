@@ -41,6 +41,117 @@ def short_id() -> str:
     return uuid.uuid4().hex[:12]
 
 
+# ─── checkpoints ────────────────────────────────────────────────────────
+# Resume support: after every tool_result we snapshot the agent transcript
+# to ~/.trendpower/checkpoints/<run_id>.json so a crashed/killed run can be
+# resumed later via --resume <run_id>. Atomic write (tmp + replace).
+
+CHECKPOINT_DIR = Path.home() / ".trendpower" / "checkpoints"
+
+
+def checkpoint_path(run_id: str) -> Path:
+    return CHECKPOINT_DIR / f"{run_id}.json"
+
+
+def load_checkpoint(run_id: str) -> dict | None:
+    """Load a previously persisted transcript. Returns None if missing."""
+    p = checkpoint_path(run_id)
+    if not p.exists():
+        return None
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        emit(type="status", phase="checkpoint_load_failed", detail=str(e))
+        return None
+
+
+# ─── progress reporting tools ───────────────────────────────────────────
+# The qumall-fulltest skill calls these to surface structured progress to the
+# webview. They are plain function tools (not MCP); the runner registers them
+# as extra_tools alongside the MCP set. Each call emits one NDJSON event.
+
+class _ProgressState:
+    """Mutable progress snapshot, also serialized into the checkpoint."""
+
+    def __init__(self) -> None:
+        self.done = 0
+        self.total = 0
+        self.failed = 0
+        self.module: str | None = None
+        self.modules: dict[str, str] = {}  # module -> pending|running|passed|failed
+
+    def snapshot(self) -> dict:
+        return {
+            "done": self.done,
+            "total": self.total,
+            "failed": self.failed,
+            "module": self.module,
+            "modules": dict(self.modules),
+        }
+
+
+def build_reporting_tools(state: _ProgressState):
+    """Build report_progress / report_module_status tools bound to `state`."""
+    from pydantic import BaseModel
+
+    from trendpower.foundation.tools import define_tool
+
+    class ReportProgressParams(BaseModel):
+        done: int
+        total: int
+        failed: int = 0
+        module: str | None = None
+
+    class ReportModuleStatusParams(BaseModel):
+        module: str
+        state: str  # pending|running|passed|failed
+
+    async def report_progress(params: ReportProgressParams) -> dict:
+        state.done = params.done
+        state.total = params.total
+        state.failed = params.failed
+        if params.module is not None:
+            state.module = params.module
+        emit(
+            type="progress",
+            done=state.done,
+            total=state.total,
+            failed=state.failed,
+            module=state.module,
+        )
+        return {"ok": True, "summary": f"progress {state.done}/{state.total} (failed={state.failed})"}
+
+    async def report_module_status(params: ReportModuleStatusParams) -> dict:
+        state.modules[params.module] = params.state
+        emit(type="module_status", module=params.module, state=params.state)
+        return {"ok": True, "summary": f"module {params.module}: {params.state}"}
+
+    return [
+        define_tool(
+            name="report_progress",
+            description=(
+                "Report structured test execution progress to the UI. Call this "
+                "after each test case is executed (and after design is complete "
+                "to set the total). done=cases executed, total=total cases "
+                "planned, failed=cases that did not pass."
+            ),
+            parameters=ReportProgressParams,
+            invoke=report_progress,
+        ),
+        define_tool(
+            name="report_module_status",
+            description=(
+                "Report the state of one test module (section) to the UI. state "
+                "is one of: pending, running, passed, failed. Call when starting/"
+                "finishing a module."
+            ),
+            parameters=ReportModuleStatusParams,
+            invoke=report_module_status,
+        ),
+    ]
+
+
 async def main() -> int:
     ap = argparse.ArgumentParser(description="trendpower headless runner")
     ap.add_argument("--prompt", required=True, help="User prompt")
@@ -67,10 +178,29 @@ async def main() -> int:
         help="Override base URL (e.g. https://api.minimaxi.com/anthropic for a "
              "non-default endpoint). Default: provider's own URL.",
     )
+    ap.add_argument(
+        "--run-id",
+        default=None,
+        help="Stable run identifier (used for the checkpoint filename). "
+             "If omitted, a random id is generated.",
+    )
+    ap.add_argument(
+        "--resume",
+        default=None,
+        help="Resume a previous run by run_id. Loads the saved transcript from "
+             "~/.trendpower/checkpoints/<run_id>.json and continues. The --prompt "
+             "is still required as the resume nudge.",
+    )
+    ap.add_argument(
+        "--skill",
+        default=None,
+        help="Force-activate a skill by name (e.g. qumall-fulltest). The skill "
+             "file is read first even if the user prompt is short.",
+    )
     args = ap.parse_args()
 
-    run_id = short_id()
-    emit(type="session_start", run_id=run_id, cwd=args.cwd, model=args.model, provider=args.provider)
+    run_id = args.run_id or args.resume or short_id()
+    emit(type="session_start", run_id=run_id, cwd=args.cwd, model=args.model, provider=args.provider, resume=bool(args.resume), skill=args.skill)
 
     # ─── import trendpower ──────────────────────────────────────────────
     try:
@@ -157,11 +287,17 @@ async def main() -> int:
     # ─── agent ──────────────────────────────────────────────────────────
     cwd_path = Path(args.cwd)
     emit(type="status", phase="agent_creating", detail=f"cwd={cwd_path}")
+
+    progress_state = _ProgressState()
+    reporting_tools = build_reporting_tools(progress_state)
+    extra_tools = list(mcp_tools or [])
+    extra_tools.extend(reporting_tools)
+
     try:
         agent = await create_coding_agent(
             model=model,
             cwd=str(cwd_path),
-            extra_tools=mcp_tools or None,
+            extra_tools=extra_tools or None,
         )
     except Exception as e:
         emit(type="error", message=f"create_coding_agent failed: {e}", trace=traceback.format_exc())
@@ -172,6 +308,43 @@ async def main() -> int:
             except Exception:
                 pass
         return 1
+
+    # ─── skill + resume ─────────────────────────────────────────────────
+    if args.skill:
+        agent.set_requested_skill_name(args.skill)
+        emit(type="status", phase="skill_requested", detail=args.skill)
+
+    if args.resume:
+        ckpt = load_checkpoint(args.resume)
+        if ckpt is None:
+            emit(type="error", message=f"no checkpoint found for run_id={args.resume}")
+            emit(type="session_end", run_id=run_id, ok=False, duration_ms=0)
+            if mgr is not None:
+                try:
+                    await mgr.aclose()
+                except Exception:
+                    pass
+            return 1
+        saved_msgs = ckpt.get("messages") or []
+        agent.load_messages(saved_msgs)
+        # Re-emit last known progress so the UI restores its state.
+        snap = ckpt.get("progress") or {}
+        if snap:
+            progress_state.done = snap.get("done", 0)
+            progress_state.total = snap.get("total", 0)
+            progress_state.failed = snap.get("failed", 0)
+            progress_state.module = snap.get("module")
+            progress_state.modules = dict(snap.get("modules") or {})
+            emit(
+                type="progress",
+                done=progress_state.done,
+                total=progress_state.total,
+                failed=progress_state.failed,
+                module=progress_state.module,
+            )
+            for mod, st in progress_state.modules.items():
+                emit(type="module_status", module=mod, state=st)
+        emit(type="status", phase="resumed", detail=f"loaded {len(saved_msgs)} message(s) from checkpoint")
 
     # ─── stream ─────────────────────────────────────────────────────────
     user_message = {
@@ -267,6 +440,21 @@ async def main() -> int:
                         is_error=is_err,
                         elapsed_ms=0,
                     )
+                    # Persist transcript + progress so a crash can be resumed.
+                    try:
+                        ckpt = {
+                            "run_id": run_id,
+                            "saved_at": time.time(),
+                            "messages": agent.messages,
+                            "progress": progress_state.snapshot(),
+                        }
+                        CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
+                        tmp = checkpoint_path(run_id).with_suffix(".json.tmp")
+                        with open(tmp, "w", encoding="utf-8") as f:
+                            json.dump(ckpt, f, ensure_ascii=False)
+                        os.replace(tmp, checkpoint_path(run_id))
+                    except Exception as e:
+                        emit(type="status", phase="checkpoint_save_failed", detail=str(e))
 
         emit(type="assistant_final", text=last_assistant_text)
 

@@ -41,6 +41,8 @@ type RunnerEvent =
   | { kind: "tool_result"; toolCallId: string; name: string; output: string; isError: boolean; elapsedMs: number }
   | { kind: "assistant_text"; text: string }
   | { kind: "assistant_final"; text: string }
+  | { kind: "progress"; done: number; total: number; failed: number; module?: string }
+  | { kind: "module_status"; module: string; state: "pending" | "running" | "passed" | "failed" }
   | { kind: "error"; message: string; trace?: string };
 
 interface RunnerEnded {
@@ -69,10 +71,16 @@ const errorsEl = $<HTMLDivElement>("errors");
 const logEl = $<HTMLDivElement>("log");
 const statusEl = $<HTMLDivElement>("status");
 const linkHome = $<HTMLAnchorElement>("link-home");
+const progressEl = $<HTMLDivElement>("progress");
+const progressText = $<HTMLSpanElement>("progress-text");
+const progressFailed = $<HTMLSpanElement>("progress-failed");
+const progressFill = $<HTMLDivElement>("progress-fill");
+const progressModules = $<HTMLUListElement>("progress-modules");
 
 // ─── State ─────────────────────────────────────────────────────────────
 
 let isRunning = false;
+const moduleStates = new Map<string, "pending" | "running" | "passed" | "failed">();
 
 // ─── Init ──────────────────────────────────────────────────────────────
 
@@ -93,6 +101,7 @@ btnStop.addEventListener("click", () => {
 
 btnClear.addEventListener("click", () => {
   logEl.innerHTML = "";
+  resetProgress();
   setStatus("idle", "");
 });
 
@@ -146,11 +155,20 @@ function onRunnerStarted(info: RunnerStarted): void {
   isRunning = true;
   btnRun.disabled = true;
   btnStop.disabled = false;
+  resetProgress();
   setStatus(`running… (${info.runId})`, "");
   appendRow({ kind: "status", phase: "started", detail: `prompt: ${info.prompt.slice(0, 80)}` });
 }
 
 function onRunnerEvent(ev: RunnerEvent): void {
+  if (ev.kind === "progress") {
+    updateProgress(ev);
+    return;
+  }
+  if (ev.kind === "module_status") {
+    setModuleStatus(ev.module, ev.state);
+    return;
+  }
   if (ev.kind === "assistant_text" || ev.kind === "assistant_final") {
     // collapse consecutive assistant_text into a single row that updates in place
     upsertAssistantRow(ev);
@@ -182,6 +200,61 @@ function setStatus(text: string, cls: "" | "ok" | "bad"): void {
   statusEl.textContent = text;
   statusEl.classList.remove("ok", "bad");
   if (cls) statusEl.classList.add(cls);
+}
+
+// ─── Progress bar ──────────────────────────────────────────────────────
+
+function resetProgress(): void {
+  moduleStates.clear();
+  progressEl.hidden = true;
+  progressFill.style.width = "0%";
+  progressFill.classList.remove("has-failures", "all-failed");
+  progressText.textContent = "0 / 0";
+  progressFailed.hidden = true;
+  progressFailed.textContent = "failed: 0";
+  progressModules.innerHTML = "";
+}
+
+function updateProgress(ev: { done: number; total: number; failed: number; module?: string }): void {
+  progressEl.hidden = false;
+  const total = ev.total > 0 ? ev.total : 0;
+  const done = Math.max(0, ev.done);
+  const failed = Math.max(0, ev.failed);
+  progressText.textContent = total > 0 ? `${done} / ${total}` : `${done}`;
+  if (failed > 0) {
+    progressFailed.hidden = false;
+    progressFailed.textContent = `failed: ${failed}`;
+  } else {
+    progressFailed.hidden = true;
+  }
+  const pct = total > 0 ? Math.min(100, (done / total) * 100) : 0;
+  progressFill.style.width = `${pct}%`;
+  progressFill.classList.remove("has-failures", "all-failed");
+  if (failed > 0 && done > 0 && failed >= done) {
+    progressFill.classList.add("all-failed");
+  } else if (failed > 0) {
+    progressFill.classList.add("has-failures");
+  }
+}
+
+function setModuleStatus(module: string, state: "pending" | "running" | "passed" | "failed"): void {
+  moduleStates.set(module, state);
+  progressEl.hidden = false;
+  let li = progressModules.querySelector<HTMLLIElement>(`[data-module="${cssEscape(module)}"]`);
+  if (!li) {
+    li = document.createElement("li");
+    li.dataset.module = module;
+    li.title = module;
+    li.textContent = module;
+    progressModules.appendChild(li);
+  }
+  li.classList.remove("pending", "running", "passed", "failed");
+  li.classList.add(state);
+}
+
+function cssEscape(s: string): string {
+  // Escape for querySelector attribute selector. CSS.escape is available in webview.
+  return (window as any).CSS?.escape ? (window as any).CSS.escape(s) : s.replace(/["\\]/g, "\\$&");
 }
 
 let assistantRow: HTMLDivElement | null = null;

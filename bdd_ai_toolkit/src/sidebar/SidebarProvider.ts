@@ -93,7 +93,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         await this.runHealthCheck();
         return;
       case "submitPrompt":
-        await this.startRun(String(msg.prompt ?? ""));
+        await this.startRun(String(msg.prompt ?? ""), {
+          resumeFrom: typeof msg.resumeFrom === "string" ? msg.resumeFrom : undefined,
+          skill: typeof msg.skill === "string" ? msg.skill : undefined,
+        });
         return;
       case "cancelRun":
         await this.runner?.stop();
@@ -116,7 +119,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     this.post({ command: "healthUpdate", health });
   }
 
-  private async startRun(prompt: string): Promise<void> {
+  private async startRun(prompt: string, opts?: { resumeFrom?: string; skill?: string }): Promise<void> {
     const view = this.view;
     if (!view) return;
     const trimmed = prompt.trim();
@@ -130,11 +133,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     }
 
     this.runner = new TrendpowerRunner(this.context.extensionPath);
-    this.currentRunId = newRunId();
+    // On resume, adopt the runner's run id (== resumeFrom) so events line up.
+    this.currentRunId = opts?.resumeFrom || newRunId();
     const unsub = this.runner.subscribe((out) => this.handleRunnerOutput(out));
 
     const cwd = resolveRunnerCwd(vscode.workspace.workspaceFolders?.[0]);
-    await this.runner.start(trimmed, cwd);
+    await this.runner.start(trimmed, cwd, opts);
 
     // Best-effort cleanup once the run ends — we keep the runner instance
     // alive briefly so subscribers don't race the close event.

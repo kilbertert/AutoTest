@@ -13,7 +13,7 @@
 export type WebviewCommand =
   | { command: "webviewLoaded" }
   | { command: "runHealthCheck" }
-  | { command: "submitPrompt"; prompt: string }
+  | { command: "submitPrompt"; prompt: string; resumeFrom?: string; skill?: string }
   | { command: "cancelRun" }
   | { command: "openExternalUrl"; url: string }
   | { command: "openTrendpowerHome" };
@@ -45,6 +45,8 @@ export type RunnerEvent =
   | { kind: "tool_result"; toolCallId: string; name: string; output: string; isError: boolean; elapsedMs: number }
   | { kind: "assistant_text"; text: string }
   | { kind: "assistant_final"; text: string }
+  | { kind: "progress"; done: number; total: number; failed: number; module?: string }
+  | { kind: "module_status"; module: string; state: "pending" | "running" | "passed" | "failed" }
   | { kind: "error"; message: string; trace?: string };
 
 export interface RunnerEnded {
