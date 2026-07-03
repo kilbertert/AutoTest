@@ -83,46 +83,6 @@ html, body {
   gap: 6px;
 }
 
-.tp-resume-menu {
-  background: var(--vscode-editor-background);
-  border: 1px solid var(--vscode-input-border);
-  border-radius: var(--tp-radius);
-  padding: 4px 0;
-  max-height: 200px;
-  overflow-y: auto;
-}
-.tp-resume-empty {
-  padding: 6px 10px;
-  font-size: 11px;
-  color: var(--vscode-descriptionForeground);
-  font-style: italic;
-}
-.tp-resume-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-.tp-resume-list li {
-  padding: 4px 10px;
-  font-size: 11px;
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.tp-resume-list li:hover {
-  background: var(--vscode-list-hoverBackground);
-}
-.tp-resume-list li .run-id {
-  font-family: var(--vscode-editor-font-family);
-  font-weight: 600;
-  color: var(--vscode-textLink-foreground);
-}
-.tp-resume-list li .run-meta {
-  color: var(--vscode-descriptionForeground);
-  font-size: 10px;
-}
-
 .tp-btn {
   padding: 4px 12px;
   border-radius: var(--tp-radius);

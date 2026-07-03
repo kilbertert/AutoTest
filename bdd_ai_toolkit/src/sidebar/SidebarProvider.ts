@@ -67,34 +67,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
   // ─── internals ───────────────────────────────────────────────────────────
 
-  private async listCheckpoints(): Promise<Array<{ runId: string; savedAt: number; messages: number; progress: any; lastUrl: string | null }>> {
-    const dir = path.join(os.homedir(), ".trendpower", "checkpoints");
-    try {
-      const entries = await fs.promises.readdir(dir);
-      const out: Array<{ runId: string; savedAt: number; messages: number; progress: any; lastUrl: string | null }> = [];
-      for (const name of entries) {
-        if (!name.endsWith(".json")) continue;
-        const full = path.join(dir, name);
-        try {
-          const raw = await fs.promises.readFile(full, "utf-8");
-          const j = JSON.parse(raw);
-          out.push({
-            runId: j.run_id || name.replace(/\.json$/, ""),
-            savedAt: j.saved_at || 0,
-            messages: Array.isArray(j.messages) ? j.messages.length : 0,
-            progress: j.progress || null,
-            lastUrl: j.progress?.last_url || null,
-          });
-        } catch { /* skip unreadable checkpoint */ }
-      }
-      // Newest first
-      out.sort((a, b) => b.savedAt - a.savedAt);
-      return out;
-    } catch {
-      return [];
-    }
-  }
-
   private sidebarResourceRoot(): vscode.Uri {
     return vscode.Uri.file(path.join(this.context.extensionPath, "resources"));
   }
@@ -120,11 +92,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       case "runHealthCheck":
         await this.runHealthCheck();
         return;
-      case "listCheckpoints": {
-        const list = await this.listCheckpoints();
-        this.post({ command: "checkpointList", list } as any);
-        return;
-      }
       case "submitPrompt":
         await this.startRun(String(msg.prompt ?? ""), {
           resumeFrom: typeof msg.resumeFrom === "string" ? msg.resumeFrom : undefined,

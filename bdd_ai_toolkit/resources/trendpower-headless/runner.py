@@ -80,9 +80,6 @@ class _ProgressState:
         self.failed = 0
         self.module: str | None = None
         self.modules: dict[str, str] = {}  # module -> pending|running|passed|failed
-        # Last known stable page URL (the most recent navigate_page URL).
-        # Used on --resume to re-open the tab the agent was working on.
-        self.last_url: str | None = None
 
     def snapshot(self) -> dict:
         return {
@@ -91,7 +88,6 @@ class _ProgressState:
             "failed": self.failed,
             "module": self.module,
             "modules": dict(self.modules),
-            "last_url": self.last_url,
         }
 
 
@@ -420,14 +416,6 @@ async def main() -> int:
                     inp = part.get("input")
                     pending_tool_use[tid] = (name, inp)
                     emit(type="tool_call", id=tid, name=name, input=inp)
-                    # Track the most recent stable URL so a resume can re-open
-                    # the same module's tab. Tolerates both {"url": "..."} and
-                    # {"type": "url", "url": "..."} shapes that chrome-devtools
-                    # tools have used across versions.
-                    if name in ("chrome-devtools__navigate_page", "chrome-devtools__new_page") and isinstance(inp, dict):
-                        url = inp.get("url")
-                        if isinstance(url, str) and url.startswith(("http://", "https://")):
-                            progress_state.last_url = url
 
                 elif pt == "tool_result":
                     tid = str(part.get("tool_use_id") or "")
@@ -452,27 +440,6 @@ async def main() -> int:
                         is_error=is_err,
                         elapsed_ms=0,
                     )
-                    # CDP target recovery hint: when a chrome-devtools tool
-                    # fails with "Target closed" (typical after an SPA route
-                    # change), emit a follow-up status event so the agent
-                    # knows to call chrome-devtools__list_pages + re-select
-                    # (or re-new_page) and retry once. Defined in
-                    # qumall-fulltest SKILL.md §2.6.
-                    if is_err and name.startswith("chrome-devtools__") and (
-                        "Target closed" in out_text
-                        or "Session closed" in out_text
-                        or "no such target" in out_text
-                    ):
-                        emit(
-                            type="status",
-                            phase="cdp_target_recover",
-                            detail=(
-                                f"chrome-devtools target detached after {name}. "
-                                "Call chrome-devtools__list_pages, re-select or "
-                                "new_page the expected module URL, then retry "
-                                "the original tool call once."
-                            ),
-                        )
                     # Persist transcript + progress so a crash can be resumed.
                     try:
                         ckpt = {

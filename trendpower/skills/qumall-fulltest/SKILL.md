@@ -25,6 +25,52 @@ description: |
   Stage 1.5 also reads real cases from the example `测试用例.xlsx` for the
   same module and feeds them as few-shot samples to keep style consistent
   with human-authored cases.
+
+  ---
+
+  ## ⚠ Mode B: replay existing cases (use this when QA already wrote cases)
+
+  When the user says "跑测试用例.xlsx" / "执行我们写好的用例" / "回归一下测试
+  用例" / "把这些用例跑一遍" — **switch to Mode B**. Do NOT design new cases
+  (Mode A is for that). Mode B skips Stage 1.5 (few-shot), Stage 3 (design),
+  and replays the cases the user already approved.
+
+  Mode B pipeline:
+  1. (pre-step, done by the user) Build a mirror xlsx with
+     `uv run --project excelio-mcp-server python mirror_blueprint.py` —
+     see "Mirror command" below.
+  2. Stage 1: read_header the mirror to confirm 16-col layout.
+  3. Stage 1' (new): read_sheet the mirror with max_rows that covers all
+     cases; group by 模块. Treat empty 模块 cells as cascading (Excel
+     merged-cell behaviour) — the agent should walk the rows in order and
+     inherit the most recent non-empty 模块.
+  4. Stage 2: chrome-devtools UI exploration — **only** for the modules
+     present in the case queue (skip modules with 0 cases).
+  5. Stage 4: for each case, parse col 11 (测试步骤) into ordered ops
+     (split on `;` or `1. 2. 3.`), execute, and write col 14 (执行结果) +
+     col 15 (备注) back to the **mirror** xlsx. Skip captcha-blocked cases
+     (mark 跳过).
+  6. Stage 5: summary + per-case pass/fail breakdown.
+
+  ---
+
+  ## Mirror command (Mode B prerequisite)
+
+  ```
+  uv run --project excelio-mcp-server python mirror_blueprint.py \
+    --src "D:/workspace/project/auto-test/AutoGenesis/测试用例.xlsx" \
+    --dst "D:/workspace/project/auto-test/AutoGenesis/blueprints/qumall-replay.xlsx" \
+    --modules 登录 充电桩首页 商家入驻/合作商家 \
+    --max-per-module 5
+  ```
+
+  This copies the source xlsx verbatim (preserving styles, shared strings,
+  theme) and trims the rows to the requested modules. The mirror keeps the
+  original 16-col layout, so Stage 4's `excelio__update_cells` col 14/15
+  writes land on the same 16-col header QA expects.
+
+  IMPORTANT: never write to 测试用例.xlsx directly. The mirror is the only
+  writable surface.
 ---
 
 # qumall business context (for Stage 3 design prompt)
@@ -214,6 +260,56 @@ After Stage 1.2, seed the module chips:
 for mod in module_map.modules:
     report_module_status(module=mod, state="pending")
 ```
+
+---
+
+## Stage 1' — Mode B: load existing case queue from mirror (replay)
+
+Skip Stage 1.5 (few-shot) and Stage 3 (design). Read the **mirror** xlsx
+and build the execution queue.
+
+```
+excelio__read_header(path="<mirror>", sheet=1)
+→ confirms 16-col layout
+
+excelio__read_sheet(path="<mirror>", sheet=1, max_rows=50)
+→ returns [{row, values: [...16 cells]}]
+```
+
+For each row, build a Case object:
+```python
+case = {
+  "row": row,                                     # 1-based sheet row, used for update_cells
+  "id": vals[0], "module": vals[3], "function": vals[4], "subfunction": vals[5],
+  "title": vals[8], "preconditions": vals[9], "test_data": vals[10],
+  "steps": vals[11], "expected": vals[12],
+  "result_col": 14,                               # 0-based; 执行结果
+  "note_col": 15,                                 # 0-based; 备注
+}
+```
+
+**Cascading 模块 handling**: the source uses merged cells. Empty
+`vals[3]` (col 3, 模块) on a row means it inherits the previous row's
+模块. Walk rows in order, carrying the last non-empty value:
+
+```python
+last_module = ""
+for case in raw:
+    if case["module"]:
+        last_module = case["module"]
+    else:
+        case["module"] = last_module
+```
+
+Group cases by 模块 → `cases_by_module`. Set `total = len(cases)` and
+seed module chips:
+```
+report_progress(done=0, total=N, failed=0)
+for mod in cases_by_module:
+    report_module_status(module=mod, state="pending")
+```
+
+The mirror is the **only** writable surface. Never write to 测试用例.xlsx.
 
 ---
 
@@ -502,6 +598,28 @@ Group by `(模块, 功能)` → `cases_by_module`. This is the execution queue f
 ## Stage 4 — Per-case execution
 
 Iterate all cases in the blueprint, **one at a time**, in the matching module tab.
+
+### 4.0 Mode B variant (replay existing cases)
+
+In Mode B the "blueprint" is the **mirror xlsx** (16-col layout, no
+UI_selector or 截图路径 columns). Writable columns are 14 (执行结果) and
+15 (备注) only — col 17 does not exist in the mirror.
+
+```
+1. Same per-case execution loop as Mode A (steps, expected, click/fill/etc).
+2. Result writes to the **mirror**:
+   excelio__update_cells(path=mirror_path, sheet=1, updates=[
+     {row: case.row, col: 14, value: "通过" / "失败" / "跳过"},
+     {row: case.row, col: 15, value: "<failure reason, ≤ 200 chars>"},
+   ])
+   # DO NOT touch col 17 (no 截图路径 column in the 16-col mirror)
+   # DO NOT write to 测试用例.xlsx (read-only)
+3. Per-case report_progress and per-module report_module_status unchanged.
+```
+
+The mirror preserves the original 16-col header that QA uses in Excel, so
+the result writes land on the columns they expect. The user can open the
+mirror in Excel and see the run results inline with the original cases.
 
 ### 4.1 Per case
 

@@ -327,14 +327,22 @@ def update_cells(path: str, sheet, updates: List[Dict[str, Any]]) -> Dict[str, A
     """Update cells in `sheet`. Each update: {row: <1-based>, col: <0-based>, value: <str>}.
 
     Enforces WRITABLE_COLS — only col 14, 15, 17 (执行结果/备注/截图路径) are writable.
+
+    Implementation: pure zip+xml edit of sheet1.xml — never goes through openpyxl.
+    This preserves the source workbook's stylesheet (which is often broken in
+    xlsx files exported from older Excel versions, crashing openpyxl on load)
+    AND preserves Excel-style cascading empty cells (which openpyxl discards
+    on save, dropping rows that look empty to it).
     """
-    from openpyxl import load_workbook
+    import zipfile
+    import xml.etree.ElementTree as ET
+    import shutil
 
     p = Path(path).expanduser()
     if not p.exists():
         raise ExcelError(f"file not found: {p}")
 
-    # Validate whitelist up front — fail the whole batch if any update targets a forbidden col
+    # Validate whitelist up front
     rejected = []
     accepted = []
     for u in updates:
@@ -346,16 +354,90 @@ def update_cells(path: str, sheet, updates: List[Dict[str, Any]]) -> Dict[str, A
     if rejected:
         raise ExcelError(f"update refused: {len(rejected)} cell(s) target non-writable columns: {rejected[:3]}")
 
+    # Resolve sheet xml path. For our 16-col layouts we always use sheet1.
+    if isinstance(sheet, int):
+        sheet_path = f"xl/worksheets/sheet{sheet}.xml"
+    else:
+        sheet_path = "xl/worksheets/sheet1.xml"
+
     fh = _acquire_lock(str(p))
+    tmp = p.with_suffix(".xlsx.tmp")
     try:
-        wb = load_workbook(str(p))
-        ws = wb[sheet] if isinstance(sheet, str) else wb.worksheets[sheet - 1]
+        with zipfile.ZipFile(p) as zin:
+            sheet_bytes = zin.read(sheet_path)
+            ss_bytes = zin.read("xl/sharedStrings.xml") if "xl/sharedStrings.xml" in zin.namelist() else None
+
+        ss_root = ET.fromstring(ss_bytes) if ss_bytes else None
+        shared_strings = []
+        if ss_root is not None:
+            for si in ss_root.iter(NS + "si"):
+                t = si.find(NS + "t")
+                if t is not None:
+                    shared_strings.append(t.text or "")
+                else:
+                    shared_strings.append("".join((tt.text or "") for tt in si.iter(NS + "t")))
+
+        sheet_root = ET.fromstring(sheet_bytes)
+        sheet_data = sheet_root.find(NS + "sheetData")
+        if sheet_data is None:
+            raise ExcelError("no sheetData in target sheet")
+
+        rows_by_idx = {}
+        for r in sheet_data.findall(NS + "row"):
+            r_attr = r.attrib.get("r", "")
+            try:
+                rows_by_idx[int(r_attr)] = r
+            except ValueError:
+                continue
+
+        def col_letter(idx):
+            n = idx + 1
+            s = ""
+            while n > 0:
+                n, rem = divmod(n - 1, 26)
+                s = chr(65 + rem) + s
+            return s
+
         for u in accepted:
-            row = int(u["row"])
-            col = int(u["col"]) + 1  # openpyxl is 1-based
-            value = u.get("value", "")
-            ws.cell(row=row, column=col, value=str(value))
-        wb.save(str(p))
+            row_num = int(u["row"])
+            col_num = int(u["col"])
+            value = str(u.get("value", ""))
+            letter = col_letter(col_num)
+            ref = f"{letter}{row_num}"
+
+            row = rows_by_idx.get(row_num)
+            if row is None:
+                row = ET.SubElement(sheet_data, NS + "row")
+                row.set("r", str(row_num))
+                rows_by_idx[row_num] = row
+
+            cell = None
+            for c in row.findall(NS + "c"):
+                if c.attrib.get("r", "").startswith(letter):
+                    cell = c
+                    break
+            if cell is None:
+                cell = ET.SubElement(row, NS + "c")
+                cell.set("r", ref)
+
+            for child in list(cell):
+                if child.tag in (NS + "v", NS + "is"):
+                    cell.remove(child)
+            cell.set("t", "inlineStr")
+            is_el = ET.SubElement(cell, NS + "is")
+            t_el = ET.SubElement(is_el, NS + "t")
+            t_el.text = value
+
+        new_sheet_bytes = ET.tostring(sheet_root, xml_declaration=True, encoding="UTF-8")
+
+        with zipfile.ZipFile(p) as zin:
+            with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zout:
+                for item in zin.namelist():
+                    if item == sheet_path:
+                        zout.writestr(item, new_sheet_bytes)
+                    else:
+                        zout.writestr(item, zin.read(item))
+        shutil.move(str(tmp), str(p))
     finally:
         _release_lock(fh)
 

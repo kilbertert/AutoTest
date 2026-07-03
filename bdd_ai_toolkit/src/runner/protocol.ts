@@ -60,14 +60,4 @@ export type ExtensionMessage =
   | { command: "healthUpdate"; health: HealthUpdate }
   | { command: "runnerStarted"; info: RunnerStarted }
   | { command: "runnerEvent"; runId: string; event: RunnerEvent }
-  | { command: "runnerEnded"; info: RunnerEnded }
-  | {
-      command: "checkpointList";
-      list: Array<{
-        runId: string;
-        savedAt: number;
-        messages: number;
-        progress: any;
-        lastUrl: string | null;
-      }>;
-    };
+  | { command: "runnerEnded"; info: RunnerEnded };
