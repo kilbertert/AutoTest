@@ -441,7 +441,22 @@ def update_cells(path: str, sheet, updates: List[Dict[str, Any]]) -> Dict[str, A
     finally:
         _release_lock(fh)
 
-    return {"written": len(accepted), "rejected": 0}
+    # Build a per-cell write report so the agent can verify the write actually
+    # landed (catches the "I thought I wrote but the file is empty" bug).
+    written_cells = [
+        {"row": int(u["row"]), "col": int(u["col"]), "col_letter": col_letter(int(u["col"])), "value": str(u.get("value", ""))}
+        for u in accepted
+    ]
+    rows_affected = sorted({c["row"] for c in written_cells})
+    cols_affected = sorted({c["col"] for c in written_cells})
+    return {
+        "written": len(accepted),
+        "rejected": 0,
+        "rows_affected": rows_affected,
+        "cols_affected": [col_letter(c) for c in cols_affected],
+        "cells": written_cells,
+        "summary": f"wrote {len(accepted)} cell(s) across {len(rows_affected)} row(s) and {len(cols_affected)} col(s)",
+    }
 
 
 def append_rows(path: str, sheet, rows: List[List[Any]]) -> Dict[str, Any]:

@@ -268,13 +268,44 @@ for mod in module_map.modules:
 Skip Stage 1.5 (few-shot) and Stage 3 (design). Read the **mirror** xlsx
 and build the execution queue.
 
-```
-excelio__read_header(path="<mirror>", sheet=1)
-→ confirms 16-col layout
+### ⚠ Read-once rule (avoid the 18-call read loop)
 
-excelio__read_sheet(path="<mirror>", sheet=1, max_rows=50)
-→ returns [{row, values: [...16 cells]}]
+**Do not** call `excelio__read_sheet` more than once in Stage 1'. It
+returns the full requested slice in one call. If the response mentions
+`count: N`, that's the row count — there is no pagination. Repeated
+read_sheet calls (the agent in early runs did 18 of them) waste 5-10
+tool calls and never reveal new data.
+
+**Use the JSON dump shortcut instead** — one bash call + one read_file:
+
 ```
+1. bash: uv run --project excelio-mcp-server python dump_queue.py \\
+          --mirror "<mirror_path>" \\
+          --out "<some_temp_dir>/queue.json"
+   → returns "Dumped N case(s) from ... -> <queue.json path>"
+
+2. read_file("<queue.json path>")
+   → returns the full JSON queue in ONE response, with:
+     {
+       "mirror_path": "...",
+       "header": ["用例ID", "项目", ..., "备注"],
+       "total": N,
+       "modules": {"登录": 3, "充电桩首页": 3, ...},
+       "cases": [
+         {"row": 2, "id": "test_001", "module": "登录",
+          "function": "登录", "title": "...", "steps": "1. ...; 2. ...",
+          "preconditions": "...", "test_data": "...", "expected": "..."},
+         ...
+       ]
+     }
+
+3. Build your execution queue from the JSON. No further read_sheet needed.
+   Each `case["row"]` is the 1-based sheet row you pass to update_cells.
+```
+
+The dump script handles Excel-style cascading empty cells (the source
+uses merged-cell layout where empty col D inherits the previous
+non-empty value), so `case["module"]` is always populated correctly.
 
 For each row, build a Case object:
 ```python
@@ -614,7 +645,13 @@ UI_selector or 截图路径 columns). Writable columns are 14 (执行结果) and
    ])
    # DO NOT touch col 17 (no 截图路径 column in the 16-col mirror)
    # DO NOT write to 测试用例.xlsx (read-only)
-3. Per-case report_progress and per-module report_module_status unchanged.
+3. Verify the write before reporting success:
+   update_cells returns {written, rejected, rows_affected, cols_affected,
+                          cells, summary}. Read the response — if
+   `written` < len(updates), the write was partially or fully refused
+   (likely col 17 attempted). The `summary` field is a single-line
+   human-readable string the agent can pass back to the user.
+4. Per-case report_progress and per-module report_module_status unchanged.
 ```
 
 The mirror preserves the original 16-col header that QA uses in Excel, so
