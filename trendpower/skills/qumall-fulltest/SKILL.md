@@ -263,84 +263,77 @@ for mod in module_map.modules:
 
 ---
 
-## Stage 1' — Mode B: load existing case queue from mirror (replay)
+## Stage 1' — Mode B: load existing case queue from qumall.db (replay)
 
-Skip Stage 1.5 (few-shot) and Stage 3 (design). Read the **mirror** xlsx
-and build the execution queue.
+Skip Stage 1.5 (few-shot) and Stage 3 (design). Load the cases into a
+**SQLite database** (`blueprints/qumall.db`) once, then drive the per-case
+loop via precise `qumall-db` queries — never re-read the whole xlsx /
+queue JSON.
 
-### ⚠ Read-once rule (avoid the 18-call read loop)
+### Why a database, not the JSON dump
 
-**Do not** call `excelio__read_sheet` more than once in Stage 1'. It
-returns the full requested slice in one call. If the response mentions
-`count: N`, that's the row count — there is no pagination. Repeated
-read_sheet calls (the agent in early runs did 18 of them) waste 5-10
-tool calls and never reveal new data.
+Earlier runs (qumall-replay-queue, pilot v1/v2) wasted 30-40% of tool
+calls on `excelio__read_sheet` / `read_file <queue.json>` /
+`excelio__list_sheets` to "double-check" the queue. SQLite gives exact
+per-case queries that the agent cannot "re-read the whole table" with
+on accident. The xlsx still gets the final col 14/15 writeback via
+`excelio__update_cells`; SQLite is the in-flight execution store.
 
-**Use the JSON dump shortcut instead** — one bash call + one read_file:
+### Run once at Stage 1' start
 
-```
-1. bash: uv run --project excelio-mcp-server python dump_queue.py \\
-          --mirror "<mirror_path>" \\
-          --out "<some_temp_dir>/queue.json"
-   → returns "Dumped N case(s) from ... -> <queue.json path>"
+```bash
+# 1. (Re-)build qumall.db from the mirror xlsx or from a pre-dumped queue.
+#    The first run uses --reset to drop any prior partial results; later
+#    resumes omit --reset to preserve status/note from interrupted runs.
+uv run python qumall-db/import_xlsx.py \
+    --db blueprints/qumall.db \
+    --queue blueprints/qumall-full-queue.json
 
-2. read_file("<queue.json path>")
-   → returns the full JSON queue in ONE response, with:
-     {
-       "mirror_path": "...",
-       "header": ["用例ID", "项目", ..., "备注"],
-       "total": N,
-       "modules": {"登录": 3, "充电桩首页": 3, ...},
-       "cases": [
-         {"row": 2, "id": "test_001", "module": "登录",
-          "function": "登录", "title": "...", "steps": "1. ...; 2. ...",
-          "preconditions": "...", "test_data": "...", "expected": "..."},
-         ...
-       ]
-     }
-
-3. Build your execution queue from the JSON. No further read_sheet needed.
-   Each `case["row"]` is the 1-based sheet row you pass to update_cells.
+# 2. Sanity check: how many cases are loaded, distribution, anything
+#    already done from a prior partial run.
+uv run python qumall-db/cli.py stats --db blueprints/qumall.db
 ```
 
-The dump script handles Excel-style cascading empty cells (the source
-uses merged-cell layout where empty col D inherits the previous
-non-empty value), so `case["module"]` is always populated correctly.
-
-For each row, build a Case object:
-```python
-case = {
-  "row": row,                                     # 1-based sheet row, used for update_cells
-  "id": vals[0], "module": vals[3], "function": vals[4], "subfunction": vals[5],
-  "title": vals[8], "preconditions": vals[9], "test_data": vals[10],
-  "steps": vals[11], "expected": vals[12],
-  "result_col": 14,                               # 0-based; 执行结果
-  "note_col": 15,                                 # 0-based; 备注
+Output (single-line JSON, easy to parse):
+```json
+{
+  "ok": true,
+  "total": 3590,
+  "by_status": {"(pending)": 1200, "通过": 1800, "失败": 540, "跳过": 50},
+  "by_module": [
+    {"module": "会员", "total": 261, "passed": 0, "failed": 0, "skipped": 0, "pending": 261},
+    ...
+  ],
+  "top_failures": [
+    {"note": "Element not found: 提交按钮", "n": 23},
+    ...
+  ]
 }
 ```
 
-**Cascading 模块 handling**: the source uses merged cells. Empty
-`vals[3]` (col 3, 模块) on a row means it inherits the previous row's
-模块. Walk rows in order, carrying the last non-empty value:
+### Initialize the UI + report_progress seed
 
-```python
-last_module = ""
-for case in raw:
-    if case["module"]:
-        last_module = case["module"]
-    else:
-        case["module"] = last_module
+```
+total = stats["total"]; done = total - stats["by_status"].get("(pending)", 0)
+failed = stats["by_status"].get("失败", 0)
+report_progress(done=done, total=total, failed=failed)
+for mod in stats["by_module"]:
+    if mod["pending"] > 0:
+        report_module_status(module=mod["module"], state="pending")
 ```
 
-Group cases by 模块 → `cases_by_module`. Set `total = len(cases)` and
-seed module chips:
-```
-report_progress(done=0, total=N, failed=0)
-for mod in cases_by_module:
-    report_module_status(module=mod, state="pending")
-```
+### Strict tool rules (Mode B)
 
-The mirror is the **only** writable surface. Never write to 测试用例.xlsx.
+- ✅ Allowed in Stage 1'/4: `bash` (running `qumall-db/cli.py ...`),
+  `chrome-devtools__*` (browser control), `excelio__update_cells` (mirror
+  col 14/15 writeback), `report_progress` / `report_module_status` (UI).
+- ❌ Banned in Stage 1'/4: `excelio__read_sheet` / `excelio__read_header`
+  / `excelio__list_sheets` / `read_file` on the queue JSON. The mirror
+  was already read at the start of Stage 1' by `import_xlsx.py`; the DB
+  is the only thing you need during execution.
+
+The mirror is the **only** writable Excel surface. Never write to
+测试用例.xlsx (read-only).
 
 ---
 
@@ -403,6 +396,36 @@ this hard rule to the Stage 3 prompt:
 ## Stage 2 — UI exploration (per module)
 
 For each `(module, function)` from Stage 1.2:
+
+### ⚠ 2.0 TOOL RULES — read this first (every stage, no exceptions)
+
+The agent has FIVE MCP servers loaded. **Each one has a strict role; mixing
+them is a bug.** Read the table once and apply it to every tool call:
+
+| Task | USE | NEVER USE |
+|---|---|---|
+| Open a URL / new browser tab | `chrome-devtools__new_page` or `chrome-devtools__navigate_page` | `pywinauto__app_launch` (that launches native Windows apps like Notepad, not a browser — wrong tool) |
+| Click / fill / read DOM | `chrome-devtools__click` / `fill` / `take_snapshot` / `evaluate_script` | `pywinauto__*` (desktop controls only — does NOT touch the browser DOM) |
+| See browser pages open | `chrome-devtools__list_pages` | `pywinauto__app_screenshot` (screenshots the Windows desktop, not the browser) |
+| Read the mirror xlsx | `bash` + `dump_queue.py` (preferred) **or** `excelio__read_sheet` ONCE | `read_file` on a binary xlsx (returns garbage) |
+| Write results to mirror | `excelio__update_cells` (col 14 + 15 only) | `apply_patch` / `write_file` on the xlsx (will corrupt it) |
+| Edit source code in the repo | `apply_patch` / `str_replace` | n/a (this skill does not edit code) |
+| Run a shell command | `bash` | n/a |
+| Read a text/markdown file | `read_file` | n/a |
+
+**If a tool you tried to call returns a confusing or empty result, the
+fix is NEVER to swap to a different tool family — it is to read this
+table again and use the right one.** Empirically: the agent has tried
+`pywinauto__app_launch` to "open a browser" multiple times in test
+runs. That tool launches Notepad. It will not navigate to qumall. Stop
+and re-read the table.
+
+**Domain split:**
+- `chrome-devtools__*` = the **browser** (web pages, DOM, screenshots, JS evaluation)
+- `pywinauto__*` = the **Windows desktop** (native windows, Win32 controls) — NOT loaded for this skill
+- `excelio__*` = the **spreadsheet** (read / write xlsx)
+- `bash` = the **shell** (run python scripts, file ops)
+- `read_file` / `write_file` / `apply_patch` = the **source code repo** (only edit code, never xlsx)
 
 ### 2.1 Open a fresh tab per module
 
@@ -637,21 +660,66 @@ UI_selector or 截图路径 columns). Writable columns are 14 (执行结果) and
 15 (备注) only — col 17 does not exist in the mirror.
 
 ```
-1. Same per-case execution loop as Mode A (steps, expected, click/fill/etc).
-2. Result writes to the **mirror**:
-   excelio__update_cells(path=mirror_path, sheet=1, updates=[
-     {row: case.row, col: 14, value: "通过" / "失败" / "跳过"},
-     {row: case.row, col: 15, value: "<failure reason, ≤ 200 chars>"},
-   ])
-   # DO NOT touch col 17 (no 截图路径 column in the 16-col mirror)
-   # DO NOT write to 测试用例.xlsx (read-only)
-3. Verify the write before reporting success:
-   update_cells returns {written, rejected, rows_affected, cols_affected,
-                          cells, summary}. Read the response — if
-   `written` < len(updates), the write was partially or fully refused
-   (likely col 17 attempted). The `summary` field is a single-line
-   human-readable string the agent can pass back to the user.
-4. Per-case report_progress and per-module report_module_status unchanged.
+Per-case loop — drive via qumall-db, not by re-reading the xlsx/JSON:
+
+1. Pop one case from the DB (source-ordered by sheet_row):
+   bash: uv run python qumall-db/cli.py next-pending --db blueprints/qumall.db
+   → returns:
+     {
+       "ok": true,
+       "case": {
+         "id": "test_017",
+         "sheet_row": 18,
+         "module": "基础功能",
+         "function": "首页数据",
+         "subfunction": "KPI",
+         "title": "首页KPI卡片正常显示",
+         "preconditions": "已登录后台",
+         "test_data": "无",
+         "steps": "1. 访问首页 ... 2. 查看KPI卡片 ...",
+         "expected": "4个KPI卡片显示数据为0/0/0/0"
+       },
+       "remaining": 3590
+     }
+   If `case` is null, the queue is exhausted — go to Stage 5.
+
+2. Execute the case (chrome-devtools__list_pages → select_page →
+   navigate/click/fill/snapshot per case.steps). Apply Stage 4.1
+   rules (target stability 2.2.1, captcha 4.5, etc.).
+
+3. Determine 通过/失败/跳过 by comparing actual to case.expected.
+
+4. Write back TWO places in parallel:
+   a. qumall-db (in-flight execution store):
+      bash: uv run python qumall-db/cli.py set --db blueprints/qumall.db \\
+          --id <case.id> --status <通过|失败|跳过> --note "<≤200 chars>"
+      → returns {"ok": true, "id": "...", "status": "...", "note_len": N}
+   b. mirror xlsx (final visible result for QA opening in Excel):
+      excelio__update_cells(path=mirror_path, sheet=1, updates=[
+        {row: <case.sheet_row>, col: 14, value: "<status>"},
+        {row: <case.sheet_row>, col: 15, value: "<note>"},
+      ])
+      # DO NOT touch col 17 (no 截图路径 column in the 16-col mirror)
+      # DO NOT write to 测试用例.xlsx (read-only)
+
+5. Verify both writes succeeded:
+   - cli.py set returns ok=true → DB updated
+   - update_cells response has written=2 rejected=0 → xlsx updated.
+     If rejected > 0 the write was refused (col 17 attempted, or row
+     out of range); the `summary` field explains.
+
+6. Update UI:
+   report_progress(done=<done+1>, total=<total>,
+                   failed=<stats.by_status["失败"]>, module=<case.module>)
+   When the LAST case of a module finishes:
+   report_module_status(module=<case.module>, state="passed" | "failed")
+
+7. Loop back to step 1.
+
+8. If the loop ends naturally (next-pending returns case=null) OR a
+   case is permanently blocked, call:
+   bash: uv run python qumall-db/cli.py stats --db blueprints/qumall.db
+   → use this for the Stage 5 final report.
 ```
 
 The mirror preserves the original 16-col header that QA uses in Excel, so
@@ -712,8 +780,20 @@ runner --resume <run_id> --prompt "继续执行 blueprint 里未完成的用例"
 
 On resume, the runner reloads the transcript and re-emits the last
 `progress` + per-module `module_status` events so the sidebar restores its
-state. Your first action on resume should be to read the blueprint's col 14 to
-find the first row where 执行结果 is still empty, and continue from there.
+state. Your first action on resume should be:
+
+```bash
+# 1. Check what's still pending
+uv run python qumall-db/cli.py stats --db blueprints/qumall.db
+
+# 2. Continue from next-pending — it returns the lowest sheet_row
+#    whose status is NULL, ignoring already-finished rows.
+uv run python qumall-db/cli.py next-pending --db blueprints/qumall.db
+```
+
+The DB is the source of truth for "what to run next" — DO NOT re-scan
+the mirror xlsx for empty col 14 to find the next row. Re-importing the
+xlsx WITHOUT `--reset` is also safe: it preserves prior status/note.
 
 ### 4.4 Error recovery
 
