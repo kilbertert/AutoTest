@@ -25,10 +25,21 @@ import json
 import re
 from typing import Any, Callable
 
+# Local imports.
+from navigate import navigate_to
+
 # Reuse the CDP client. `cdp` is a qumall-runner.cdp_client.Client instance.
 
 
 # ─── helpers ─────────────────────────────────────────────────────────────
+
+
+def _navigate(cdp, case: dict, module: str) -> tuple[bool, str]:
+    """Navigate to the module page. Returns (ok, note).
+    `case` is the full case dict (so we can pass subfunction along)."""
+    function = case.get("function", "") or ""
+    subfunction = case.get("subfunction", "") or ""
+    return navigate_to(cdp, module, function, subfunction)
 
 
 def _parse_steps(steps: str) -> list[str]:
@@ -90,6 +101,11 @@ def run_state_check(case: dict, cdp, module: str) -> tuple[str, str]:
     Returns "通过" if at least one expected phrase is present, "失败"
     if navigation failed, "跳过" if the page is the login page.
     """
+    # 1. Navigate via the menu tree first.
+    ok, nav_note = _navigate(cdp, case, module)
+    if not ok:
+        return "跳过", f"nav failed at: {nav_note[:140]}"
+
     expected = case.get("expected", "")
     if not expected:
         return "跳过", "no expected text"
@@ -100,10 +116,6 @@ def run_state_check(case: dict, cdp, module: str) -> tuple[str, str]:
     noise = {"正常", "展示", "显示", "正确", "符合", "可以", "能够", "支持"}
     phrases = [p.strip() for p in phrases if len(p.strip()) >= 2 and p.strip() not in noise][:5]
 
-    page_id = _find_module_page(cdp, module)
-    if page_id is None:
-        # Fall back: just check current page (may be home)
-        pass
     cdp.wait_for_text(phrases[0] if phrases else "", timeout_ms=4000) if phrases else None
 
     # Check current page's body text against the phrases.
@@ -134,7 +146,7 @@ def run_form(case: dict, cdp, module: str) -> tuple[str, str]:
     """For 'fill form X then submit' style cases.
 
     Heuristic:
-      1. Navigate to module page
+      1. Navigate to module page (via menu tree)
       2. Find input elements by their label
       3. Fill each one from case.steps
       4. Click the submit/save button
@@ -153,7 +165,10 @@ def run_form(case: dict, cdp, module: str) -> tuple[str, str]:
     if not fields:
         return "跳过", "no input steps detected"
 
-    _find_module_page(cdp, module)
+    # 1. Navigate via the menu tree first.
+    ok, nav_note = _navigate(cdp, case, module)
+    if not ok:
+        return "跳过", f"nav failed: {nav_note[:140]}"
     cdp.wait_for_text(fields[0][0], timeout_ms=5000)
 
     # For each field: find the input by its label, fill it.
@@ -250,12 +265,16 @@ def run_upload(case: dict, cdp, module: str) -> tuple[str, str]:
     Verify that a 'success' or uploaded state appears.
     """
     test_data = case.get("test_data", "") or ""
+    # 1. Navigate via the menu tree first.
+    ok, nav_note = _navigate(cdp, case, module)
+    if not ok:
+        return "跳过", f"nav failed: {nav_note[:140]}"
+
     # Find a file in the test data area; default to a generated dummy PNG.
     candidate = _find_upload_file(test_data)
     if candidate is None:
         return "跳过", "no upload file found"
 
-    _find_module_page(cdp, module)
     cdp.wait_for_text("上传", timeout_ms=5000)
 
     # Find the first visible file input and set the file.

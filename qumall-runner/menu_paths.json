@@ -1,0 +1,188 @@
+{
+  "_comment": "qumall admin 后台菜单路径映射表。基础功能: 通过 user_dropdown → 个人信息 → 基本信息 路径（个人信息 dropdown 项是 #/info/index）。其他 module: top_tab + sidebar。",
+  "_actions": {
+    "top_tab": "点击顶部 5 个 tab 之一 (运营/财务/IOT/充电桩/系统)",
+    "sidebar": "点击左侧 sidebar menu item 的文字",
+    "user_dropdown": "点击右上角用户头像区域 (huitong + ▼) 展开下拉，再点菜单项",
+    "home": "点击顶栏 logo / home 图标回首页 (充电桩 tab 的首页)",
+    "sub_link": "页面内的二级链接 / 按钮 (subfunction 匹配)"
+  },
+
+  "登录":           [{"act": "top_tab", "value": "登录"}],
+  "首页":           [{"act": "home"}],
+
+  "基础功能": [
+    {"act": "navigate", "value": "https://admin.qumall.qushiyun.com/#/info/index"},
+    {"act": "sub_link", "value": "{subfunction}"}
+  ],
+
+  "充电桩首页":     [{"act": "top_tab", "value": "充电桩"}],
+
+  "运营商": [
+    {"act": "top_tab", "value": "运营"},
+    {"act": "sidebar", "value": "{function}"}
+  ],
+
+  "IOT": [
+    {"act": "top_tab", "value": "IOT"},
+    {"act": "sidebar", "value": "{function}"}
+  ],
+
+  "充电桩": [
+    {"act": "top_tab", "value": "充电桩"},
+    {"act": "sidebar", "value": "{function}"}
+  ],
+
+  "财务": [
+    {"act": "top_tab", "value": "财务"},
+    {"act": "sidebar", "value": "{function}"}
+  ],
+
+  "系统": [
+    {"act": "top_tab", "value": "系统"},
+    {"act": "sidebar", "value": "{function}"}
+  ],
+
+  "_per_module_overrides": {
+    "充电桩型号管理": [
+      {"act": "top_tab", "value": "IOT"},
+      {"act": "sidebar", "value": "充电桩型号管理"}
+    ],
+    "固件升级": [
+      {"act": "top_tab", "value": "IOT"},
+      {"act": "sidebar", "value": "固件升级"}
+    ],
+    "设备管理": [
+      {"act": "top_tab", "value": "IOT"},
+      {"act": "sidebar", "value": "设备管理"}
+    ],
+    "设备白名单": [
+      {"act": "top_tab", "value": "IOT"},
+      {"act": "sidebar", "value": "设备白名单"}
+    ],
+    "新能源汽车设备列表": [
+      {"act": "top_tab", "value": "IOT"},
+      {"act": "sidebar", "value": "新能源汽车设备列表"}
+    ],
+    "充电卡": [
+      {"act": "top_tab", "value": "IOT"},
+      {"act": "sidebar", "value": "充电卡"}
+    ],
+    "场地管理": [
+      {"act": "top_tab", "value": "IOT"},
+      {"act": "sidebar", "value": "场地管理"}
+    ],
+    "运营商管理": [
+      {"act": "top_tab", "value": "运营"},
+      {"act": "sidebar", "value": "运营商管理"}
+    ],
+    "运营商收益": [
+      {"act": "top_tab", "value": "运营"},
+      {"act": "sidebar", "value": "运营商收益"}
+    ],
+    "商家入驻/合作商家": [
+      {"act": "top_tab", "value": "运营"},
+      {"act": "sidebar", "value": "商家入驻/合作商家"}
+    ],
+    "订单": [
+      {"act": "top_tab", "value": "充电桩"},
+      {"act": "sidebar", "value": "订单"}
+    ],
+    "车队": [
+      {"act": "top_tab", "value": "充电桩"},
+      {"act": "sidebar", "value": "车队"}
+    ],
+    "充电预约策略": [
+      {"act": "top_tab", "value": "充电桩"},
+      {"act": "sidebar", "value": "充电预约策略"}
+    ],
+    "运营计费模板": [
+      {"act": "top_tab", "value": "充电桩"},
+      {"act": "sidebar", "value": "运营计费模板"}
+    ],
+    "占位费计费模板": [
+      {"act": "top_tab", "value": "充电桩"},
+      {"act": "sidebar", "value": "占位费计费模板"}
+    ],
+    "点位奖设置": [
+      {"act": "top_tab", "value": "充电桩"},
+      {"act": "sidebar", "value": "点位奖设置"}
+    ],
+    "结算": [
+      {"act": "top_tab", "value": "财务"},
+      {"act": "sidebar", "value": "结算"}
+    ],
+    "提现": [
+      {"act": "top_tab", "value": "财务"},
+      {"act": "sidebar", "value": "提现"}
+    ],
+    "余额": [
+      {"act": "top_tab", "value": "财务"},
+      {"act": "sidebar", "value": "余额"}
+    ],
+    "服务费": [
+      {"act": "top_tab", "value": "财务"},
+      {"act": "sidebar", "value": "服务费"}
+    ],
+    "会员": [
+      {"act": "top_tab", "value": "系统"},
+      {"act": "sidebar", "value": "会员"}
+    ],
+    "投诉建议": [
+      {"act": "top_tab", "value": "系统"},
+      {"act": "sidebar", "value": "投诉建议"}
+    ],
+    "FAQ": [
+      {"act": "top_tab", "value": "系统"},
+      {"act": "sidebar", "value": "FAQ"}
+    ],
+    "营销活动": [
+      {"act": "top_tab", "value": "系统"},
+      {"act": "sidebar", "value": "营销活动"}
+    ],
+    "素材库": [
+      {"act": "top_tab", "value": "系统"},
+      {"act": "sidebar", "value": "素材库"}
+    ],
+    "公告": [
+      {"act": "top_tab", "value": "系统"},
+      {"act": "sidebar", "value": "公告"}
+    ],
+    "协议": [
+      {"act": "top_tab", "value": "系统"},
+      {"act": "sidebar", "value": "协议"}
+    ],
+    "文章": [
+      {"act": "top_tab", "value": "系统"},
+      {"act": "sidebar", "value": "文章"}
+    ],
+    "视频": [
+      {"act": "top_tab", "value": "系统"},
+      {"act": "sidebar", "value": "视频"}
+    ],
+    "表单": [
+      {"act": "top_tab", "value": "系统"},
+      {"act": "sidebar", "value": "表单"}
+    ],
+    "数据看板": [
+      {"act": "top_tab", "value": "系统"},
+      {"act": "sidebar", "value": "数据看板"}
+    ],
+    "个人车辆": [
+      {"act": "top_tab", "value": "系统"},
+      {"act": "sidebar", "value": "个人车辆"}
+    ],
+    "故障反馈": [
+      {"act": "top_tab", "value": "系统"},
+      {"act": "sidebar", "value": "故障反馈"}
+    ],
+    "场地": [
+      {"act": "top_tab", "value": "系统"},
+      {"act": "sidebar", "value": "场地"}
+    ],
+    "数据": [
+      {"act": "top_tab", "value": "系统"},
+      {"act": "sidebar", "value": "数据"}
+    ]
+  }
+}

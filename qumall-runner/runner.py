@@ -249,11 +249,51 @@ def main() -> int:
     # Best-effort navigate to home so the first case isn't racing the
     # login page. This works because the Edge profile is pre-logged-in.
     try:
-        pages = cdp.list_pages()
-        if pages:
-            cdp.select_page(pages[0]["pageId"])
-            cdp.evaluate_script("window.location.href = 'https://admin.qumall.qushiyun.com/'")
-            cdp.wait_for_text("首页", timeout_ms=8000) or cdp.wait_for_text("huitong", timeout_ms=4000)
+        # Pick a real page (not about:blank, not the MSN new-tab page, not
+        # a service worker). Open a fresh tab if needed.
+        for attempt in range(5):
+            pages = cdp.list_pages()
+            real = [p for p in pages
+                    if p.get("type") == "page"
+                    and not p.get("url", "").startswith(("about:", "edge:", "chrome:", "https://ntp.msn"))]
+            if real:
+                cdp.select_page(real[0]["pageId"])
+                break
+            cdp.evaluate_script("window.open('about:blank', '_blank')")
+            time.sleep(1)
+        else:
+            log("  WARN: no usable page target — opening one")
+            cdp.evaluate_script("window.open('https://admin.qumall.qushiyun.com/', '_blank')")
+            time.sleep(1)
+        # Force navigate to qumall home and wait for the SPA to load.
+        cdp.evaluate_script("window.location.href = 'https://admin.qumall.qushiyun.com/'")
+        loaded = False
+        for _ in range(30):
+            ok1 = cdp.wait_for_text("huitong", timeout_ms=1500)
+            ok2 = cdp.wait_for_text("首页", timeout_ms=500)
+            if ok1 and ok2:
+                loaded = True
+                break
+            # Force reload if not loaded
+            try:
+                cdp.evaluate_script("window.location.reload()")
+            except Exception:
+                pass
+            time.sleep(1)
+        log(f"  initial navigate: loaded={loaded}")
+        if not loaded:
+            shot = str(Path.home() / ".trendpower" / "logs" / "qumall-runner-init.png")
+            try:
+                cdp.take_screenshot(shot)
+                log(f"  init screenshot saved: {shot}")
+            except Exception as e:
+                log(f"  init screenshot failed: {e!s:.80}")
+            info = cdp.evaluate_script(
+                "({url: location.href, title: document.title, "
+                "has_huitong: document.body && document.body.innerText.includes('huitong'), "
+                "body_start: document.body ? document.body.innerText.slice(0, 300) : ''})"
+            )
+            log(f"  page state: {info}")
     except Exception as e:
         log(f"  initial navigate failed (will continue anyway): {e}")
 
