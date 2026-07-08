@@ -33,9 +33,17 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Detached trendpower runner launcher")
     p.add_argument("--prompt", required=True)
     p.add_argument("--cwd", default=os.getcwd())
-    p.add_argument("--run-id", default=None)
+    p.add_argument("--run-id", default=None,
+                   help="Stable run id shared across all workers in the same pool. "
+                        "Each worker's log file is named {run_id}-{worker}.ndjson.log.")
     p.add_argument("--resume", default=None)
     p.add_argument("--skill", default=None)
+    p.add_argument(
+        "--worker-id", required=True,
+        help="Unique worker id (e.g. A, B, machine-01). Used by qumall-db "
+             "claim-next to atomically reserve cases so 2+ workers don't pick "
+             "the same case. Each worker gets its own log/checkpoint paths.",
+    )
     p.add_argument(
         "--mcp-config",
         default=str(Path.home() / ".trendpower" / "mcp_servers.json"),
@@ -64,7 +72,9 @@ def main() -> int:
     run_id = args.run_id or args.resume or uuid.uuid4().hex[:12]
     log_dir = Path(args.log_dir)
     log_dir.mkdir(parents=True, exist_ok=True)
-    log_path = log_dir / f"{run_id}.ndjson.log"
+    # Per-worker log/checkpoint file so N workers on the same run-id don't
+    # clobber each other. E.g. run qumall-150 / A / B each get their own log.
+    log_path = log_dir / f"{run_id}-{args.worker_id}.ndjson.log"
 
     runner_py = Path(args.runner_py)
     if not runner_py.exists():
@@ -89,7 +99,9 @@ def main() -> int:
         return 1
     trendpower_py_dir = workspace_root / "trendpower" / "trendpower-py"
 
-    # Build the inner command (uv run with --project trendpower-py)
+    # Build the inner command (uv run with --project trendpower-py).
+    # --run-id is suffixed with the worker id so each worker's runner.py
+    # writes its own ~/.trendpower/checkpoints/<run-id>-<worker>.json.
     inner = [
         "uv",
         "run",
@@ -109,10 +121,10 @@ def main() -> int:
         "--model",
         args.model,
         "--run-id",
-        run_id,
+        f"{run_id}-{args.worker_id}",
     ]
     if args.resume:
-        inner += ["--resume", args.resume]
+        inner += ["--resume", f"{args.resume}-{args.worker_id}"]
     if args.skill:
         inner += ["--skill", args.skill]
     if args.base_url:
@@ -151,13 +163,21 @@ def main() -> int:
 
     print(f"=== trendpower runner detached ===")
     print(f"run_id:      {run_id}")
+    print(f"worker:      {args.worker_id}")
     print(f"pid:         {proc.pid}")
     print(f"log:         {log_path}")
-    print(f"checkpoint:  {Path.home() / '.trendpower' / 'checkpoints' / f'{run_id}.json'}")
+    print(f"checkpoint:  {Path.home() / '.trendpower' / 'checkpoints' / f'{run_id}-{args.worker_id}.json'}")
+    print(f"")
+    print(f"Multi-worker tip: this run_id can be shared by N workers on N machines.")
+    print(f"All workers see the same qumall.db (e.g. on SMB); claim-next")
+    print(f"guarantees they pick different cases.")
     print(f"")
     print(f"Monitor with:")
     print(f'  tail -f "{log_path}"            # on macOS / Linux')
     print(f'  Get-Content -Wait "{log_path}"  # on PowerShell')
+    print(f"")
+    print(f"Filter key events:")
+    print(f'  PYTHONIOENCODING=utf-8 python qumall-db/filter_log.py {run_id}-{args.worker_id} --tail 30')
     print(f"")
     print(f"Stop with:")
     print(f"  taskkill /F /PID {proc.pid}     # on Windows")

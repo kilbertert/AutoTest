@@ -1,0 +1,61 @@
+Multi-worker Mode B replay — worker {WORKER_ID}。从共享 qumall.db claim-next 抢案。
+
+【目标】
+worker_id={WORKER_ID}。共享 qumall.db：D:/workspace/project/auto-test/AutoGenesis/blueprints/qumall-pilot.db（实际部署在 SMB 共享盘上）。每机一个 worker，不要抢其他 worker 的 case。
+
+【硬约束 - 违规立即出错】
+- 严禁 list_files / glob_search / file_info / find / grep / cat / ls
+- 严禁 excelio__read_sheet / read_header / list_sheets
+- 严禁 read_file 读 queue.json / qumall.db
+- 严禁 evaluate_script / take_snapshot 多次（每 case ≤ 1 次 evaluate_script / ≤ 2 次 take_snapshot）
+- 严禁 clear localStorage/cookies/sessionStorage
+- 严禁 navigate 到 #/login（Edge profile 已登录 qumall）
+- 严禁写 col 17（镜像只有 16 列）
+- 严禁写测试用例.xlsx（只读）
+- 严禁修改其他 worker claim 的 case（set 会被 worker 校验拒绝）
+
+【Stage 1'：建库 + 初始化 - 一次性】
+1. bash: uv run python qumall-db/import_xlsx.py --db blueprints/qumall-pilot.db --queue blueprints/qumall-pilot-queue.json
+   （如 db 已有则 skip；--reset 仅在多 worker 首次协调后由操作员手动跑）
+2. bash: uv run python qumall-db/cli.py stats --db blueprints/qumall-pilot.db
+   注意 by_worker 字段：如果其他 worker 已有 claimed 行，那是正常的，**不要去碰它们**。
+
+【Stage 4：每条 case - 用 claim-next 严格白名单】
+循环（直到 claim-next 返回 case=null）：
+  1. 抢下一条：bash: uv run python qumall-db/cli.py claim-next --db blueprints/qumall-pilot.db --worker {WORKER_ID} --lease-minutes 30
+     → 返回 {"case": {...}, "remaining": N, "lease_until": "..."}
+     如果 case=null（队列空）→ Stage 5
+  2. chrome-devtools 驱动（白名单）：
+     - list_pages / select_page
+     - navigate_page / click(uid) / fill(uid,v) / press_key
+     - take_snapshot ≤ 2 次
+     - evaluate_script ≤ 1 次
+     - take_screenshot（仅失败时）
+  3. 对比 case.expected 判定 通过/失败/跳过
+  4. 写回两处（必须都成功，--worker 必填避免覆盖其他 worker 的活）：
+     a. bash: uv run python qumall-db/cli.py set --db blueprints/qumall-pilot.db --id <case.id> --status <S> --note "<≤200字>" --worker {WORKER_ID}
+        如果返回 ok=false 且 error 包含 "claimed by worker" → 该 case 被其他 worker 抢走，本 worker 跳过这 case，**不要再写**
+     b. excelio__update_cells(path=blueprints/qumall-pilot.xlsx, sheet=1, updates=[
+          {row: <row>, col: 14, value: <S>},
+          {row: <row>, col: 15, value: <note>},
+        ])
+  5. 如果本 case 执行过程崩了（浏览器错 / 超时）→ 调 release 让其他 worker 能抢：
+     bash: uv run python qumall-db/cli.py release --db blueprints/qumall-pilot.db --id <case.id> --worker {WORKER_ID}
+  6. UI：report_progress(done=<stats.by_status["通过"]+stats.by_status["失败"]+stats.by_status["跳过"]>, total=<stats.total>, failed=<stats.by_status["失败"]>, module=case.module)
+  7. 模块最后一条结束：report_module_status(module=case.module, state="passed" or "failed")
+
+【Stage 5：汇总】
+bash: uv run python qumall-db/cli.py stats --db blueprints/qumall-pilot.db
+assistant_final 报告：
+- 本 worker 处理的 case 数（从 stats.by_worker 找自己）
+- 整体进度（stats.by_status）
+- top 5 失败原因
+- 然后自然结束（不要 set / claim / 等）
+
+【关键：worker 隔离】
+- 你的 prompt 已被注入 WORKER_ID={WORKER_ID}，所有 cli.py 调用必须带 --worker {WORKER_ID}
+- 看到其他 worker 的 claimed 行：忽略，不要 set / release
+- 自己的 lease 30 分钟：超过 30 分钟不 set，自动被其他 worker 抢走（或者通过 sweep-expired 清理）
+- 任何时候你崩溃重启：重新 claim-next 即可，自动从空闲的最低 sheet_row 接着
+
+run_id=qumall-pool-{WORKER_ID}。开始。
