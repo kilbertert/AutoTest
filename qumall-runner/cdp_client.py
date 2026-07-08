@@ -189,30 +189,60 @@ class Client:
             close_fds=True,
         )
         # Wait for the debugger to come up.
-        deadline = time.time() + 30
+        deadline = time.time() + 60
+        last_err: Optional[Exception] = None
         while time.time() < deadline:
             try:
                 urllib.request.urlopen(f"http://127.0.0.1:{self.debug_port}/json/version", timeout=2)
                 return
-            except Exception:
+            except Exception as e:
+                last_err = e
                 time.sleep(0.5)
-        raise RuntimeError(f"Edge didn't open debug port {self.debug_port} within 30s")
+        # One last attempt with longer timeout to get a real error
+        try:
+            urllib.request.urlopen(f"http://127.0.0.1:{self.debug_port}/json/version", timeout=5)
+        except Exception as e:
+            last_err = e
+        raise RuntimeError(
+            f"Edge didn't open debug port {self.debug_port} within 60s. "
+            f"last error: {last_err!r}. "
+            f"Check: is the user-data-dir already locked by another Edge instance?"
+        )
 
     def _http_json(self, path: str) -> list:
         with urllib.request.urlopen(f"http://127.0.0.1:{self.debug_port}{path}", timeout=10) as r:
             return json.loads(r.read().decode("utf-8"))
 
     def _attach_first_page(self) -> _WS:
-        pages = self._http_json("/json")
+        def list_pages() -> list:
+            try:
+                return self._http_json("/json")
+            except Exception:
+                return []
+        def open_new_tab(url: str = "about:blank") -> Optional[dict]:
+            # Chrome's CDP /json/new only accepts PUT (some versions accept
+            # GET; we try PUT first then GET for compatibility).
+            for method in ("PUT", "GET", "POST"):
+                try:
+                    req = urllib.request.Request(
+                        f"http://127.0.0.1:{self.debug_port}/json/new?{url}",
+                        method=method,
+                    )
+                    with urllib.request.urlopen(req, timeout=10) as r:
+                        return json.loads(r.read().decode("utf-8"))
+                except Exception:
+                    continue
+            return None
+
+        pages = list_pages()
         if not pages:
-            # No page yet — open about:blank via a new tab
-            tabs = self._http_json("/json/new?about:blank")
-            pages = tabs
+            tab = open_new_tab("about:blank")
+            if tab:
+                pages = [tab]
         # Pick the first non-Chrome-internal page
         for p in pages:
             if p.get("type") in ("page", ""):
                 ws_url = p["webSocketDebuggerUrl"]
-                # ws://127.0.0.1:PORT/devtools/page/<id>
                 m = re.match(r"ws://([^/]+)(/.*)", ws_url)
                 host_port, path = m.group(1), m.group(2)
                 host, port = host_port.split(":")

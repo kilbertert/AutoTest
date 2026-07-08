@@ -16,7 +16,7 @@
     {"act": "sub_link", "value": "{subfunction}"}
   ],
 
-  "充电桩首页":     [{"act": "top_tab", "value": "充电桩"}],
+  "充电桩首页":     [{"act": "home"}],
 
   "运营商": [
     {"act": "top_tab", "value": "运营"},

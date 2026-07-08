@@ -110,33 +110,41 @@ def run_state_check(case: dict, cdp, module: str) -> tuple[str, str]:
     if not expected:
         return "跳过", "no expected text"
 
-    # Extract 2-4 key phrases from expected (e.g. "今日充电次数", "0", "昨日充电次数 0")
-    phrases = re.findall(r"[一-龥A-Za-z0-9_]+(?:\s*[一-龥A-Za-z0-9_]+){0,3}", expected)
-    # Keep only phrases >= 2 chars, drop very common noise
-    noise = {"正常", "展示", "显示", "正确", "符合", "可以", "能够", "支持"}
-    phrases = [p.strip() for p in phrases if len(p.strip()) >= 2 and p.strip() not in noise][:5]
+    # Extract candidate keywords: each CJK or alphanumeric run of length
+    # >= 2 becomes a candidate. Drop very common noise.
+    candidates = re.findall(r"[一-龥A-Za-z0-9_]{2,}", expected)
+    noise = {
+        "正常", "展示", "显示", "正确", "符合", "可以", "能够", "支持",
+        "页面", "模块", "系统", "数据", "信息", "设置", "操作",
+        "按钮", "输入", "提示", "状态", "内容", "结果", "成功", "失败",
+        "返回", "提示框", "提示语", "样式", "验证", "效果",
+    }
+    keywords = [k for k in candidates if k not in noise and len(k) >= 2]
+    # Prioritize longer / more specific terms first; fall back to top 6.
+    keywords.sort(key=lambda k: -len(k))
+    keywords = keywords[:6]
 
-    cdp.wait_for_text(phrases[0] if phrases else "", timeout_ms=4000) if phrases else None
+    cdp.wait_for_text(keywords[0] if keywords else "", timeout_ms=4000) if keywords else None
 
-    # Check current page's body text against the phrases.
+    # Check current page's body text against the keywords.
     body = cdp.evaluate_script("document.body ? document.body.innerText : ''") or ""
     if not body:
         return "失败", "page body is empty"
-    if any(p in body for p in phrases):
-        return "通过", f"expected phrases visible ({len(phrases)} checked)"
+    if keywords and any(k in body for k in keywords):
+        return "通过", f"expected keywords visible ({len(keywords)} checked)"
 
     # Sometimes we hit a stale page. Try a soft reload and check once more.
     try:
         cdp.reload()
-        cdp.wait_for_text(phrases[0] if phrases else "", timeout_ms=4000) if phrases else None
+        cdp.wait_for_text(keywords[0] if keywords else "", timeout_ms=4000) if keywords else None
         body = cdp.evaluate_script("document.body ? document.body.innerText : ''") or ""
-        if any(p in body for p in phrases):
-            return "通过", f"expected phrases visible after reload ({len(phrases)} checked)"
+        if keywords and any(k in body for k in keywords):
+            return "通过", f"expected keywords visible after reload ({len(keywords)} checked)"
     except Exception:
         pass
 
     # If still not visible, mark as 跳过 (UI element genuinely missing)
-    return "跳过", f"expected phrases not in DOM: {phrases[:3]}"
+    return "跳过", f"expected keywords not in DOM: {keywords[:3]}"
 
 
 # ─── template: form validation (fill + submit + verify) ─────────────────

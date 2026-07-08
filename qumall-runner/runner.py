@@ -233,6 +233,22 @@ def main() -> int:
     log(f"=== qumall-runner start worker={args.worker_id} db={args.db} ===")
     log(f"  lease_minutes={args.lease_minutes} max_cases={args.max_cases or '∞'}")
 
+    # Ensure schema exists. The DB is shared; multiple workers may
+    # start before any of them has called init. cli.init is idempotent
+    # and only takes a lock briefly to create the table / add columns.
+    import importlib.util as _ilu
+    import sys as _sys
+    _here = Path(__file__).resolve().parent
+    # qumall-db/cli.py is one directory up from runner.py
+    _cli_path = _here.parent / "qumall-db" / "cli.py"
+    _spec = _ilu.spec_from_file_location("qumall_db_cli", _cli_path)
+    _cli_mod = _ilu.module_from_spec(_spec)
+    _sys.modules["qumall_db_cli"] = _cli_mod
+    _spec.loader.exec_module(_cli_mod)
+    import argparse as _ap
+    _cli_mod.cmd_init(_ap.Namespace(db=args.db))
+    log("  DB schema ensured")
+
     stop = Stop()
     signal.signal(signal.SIGINT, stop.set)
     signal.signal(signal.SIGTERM, stop.set)
