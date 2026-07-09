@@ -37,12 +37,12 @@ for _name in ("_line", "_k", "_v", "_lines", "_REPO_ROOT", "_ENV_FILE"):
         del locals()[_name]  # type: ignore[index]
 del _name
 
-# SMB share. In Python source r"\\192.168.2.77\qumall-pool" is the literal
-# string \\192.168.2.77\qumall-pool (Windows UNC path).
-# SMB share. Note: a single backslash prefix works on Windows via SMB
-# redirection; the standard double-backslash UNC form has shown
-# intermittent WinError 3 failures from this Python process.
-POOL_ROOT = r"\192.168.2.77\qumall-pool"
+# SMB share. Standard UNC: \\server\share. Verified working on both
+# the share host (192.168.2.77 itself) and on remote clients.
+# (Earlier single-backslash form r"\server\share" is NOT a UNC path —
+# Windows treats it as a path relative to the current drive root,
+# which silently returns "no such file" instead of erroring out.)
+POOL_ROOT = r"\\192.168.2.77\qumall-pool"
 
 # Sub-directory names.
 DB_DIR     = "db"
