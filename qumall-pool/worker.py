@@ -34,6 +34,24 @@ import time
 import uuid
 from pathlib import Path
 
+# Load .env from the repo root if it exists — lets workers run without
+# exporting env vars in their shell. We don't use python-dotenv to keep
+# zero third-party deps; the format is `KEY=VALUE` per line, `#` comments.
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+_ENV_FILE = _REPO_ROOT / ".env"
+if _ENV_FILE.exists():
+    _lines = _ENV_FILE.read_text(encoding="utf-8").splitlines()
+else:
+    _lines = []
+for _line in _lines:
+    _line = _line.strip()
+    if not _line or _line.startswith("#"):
+        continue
+    if "=" in _line:
+        _k, _v = _line.split("=", 1)
+        os.environ.setdefault(_k.strip(), _v.strip())
+del _line, _k, _v, _lines, _REPO_ROOT, _ENV_FILE
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import claim
 import config

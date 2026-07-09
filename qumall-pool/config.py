@@ -10,10 +10,32 @@ this file. Set the env vars on each machine before starting a worker:
   set OPENAI_API_KEY=<your-mimo-api-key>
   set QUMALL_USERNAME=huitong
   set QUMALL_PASSWORD=<your-password>
+
+You can also drop a `.env` file in the repo root — every qumall-pool
+script auto-loads it (setdefault, so explicit env vars still win).
 """
 from __future__ import annotations
 
 import os
+from pathlib import Path
+
+# Load .env from the repo root if it exists — lets any qumall-pool script
+# (worker, claim, status, split_jobs) run without exporting env vars in
+# their shell. Stdlib only; format is `KEY=VALUE` per line, `#` comments.
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+_ENV_FILE = _REPO_ROOT / ".env"
+if _ENV_FILE.exists():
+    _lines = _ENV_FILE.read_text(encoding="utf-8").splitlines()
+else:
+    _lines = []
+for _line in _lines:
+    _line = _line.strip()
+    if not _line or _line.startswith("#"):
+        continue
+    if "=" in _line:
+        _k, _v = _line.split("=", 1)
+        os.environ.setdefault(_k.strip(), _v.strip())
+del _line, _k, _v, _lines, _REPO_ROOT, _ENV_FILE
 
 # SMB share. In Python source r"\\192.168.2.77\qumall-pool" is the literal
 # string \\192.168.2.77\qumall-pool (Windows UNC path).
@@ -63,7 +85,8 @@ MODEL_API_KEY  = os.environ.get("OPENAI_API_KEY", "")
 if not MODEL_API_KEY:
     raise RuntimeError(
         "OPENAI_API_KEY env var is required. Set it before running the worker:\n"
-        "  set OPENAI_API_KEY=<your-mimo-api-key>"
+        "  set OPENAI_API_KEY=<your-mimo-api-key>\n"
+        "or drop a .env file in the repo root (see module docstring)."
     )
 
 # Per-job limits.
