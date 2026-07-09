@@ -118,14 +118,37 @@ def _build_runner_command(job: dict, run_id: str) -> list[str]:
         f"4) 循环 next-pending → chrome-devtools → set + update_cells → report_progress\n"
         f"5) cli.py stats → assistant_final 报告\n"
     )
-    cwd = r"D:\workspace\project\auto-test\AutoGenesis"
-    runner = cwd + r"\bdd_ai_toolkit\resources\trendpower-headless\runner.py"
-    trendpower_py = cwd + r"\trendpower\trendpower-py"
+    # Resolve the runner + trendpower-py paths from the repo root.
+    # We do NOT hardcode an absolute path here so the worker can run on
+    # any clone location (e.g. D:\workspace\project\auto_test\AutoTest
+    # vs D:\workspace\project\auto-test\AutoGenesis). The runner lives at
+    # <repo>/bdd_ai_toolkit/resources/trendpower-headless/runner.py and
+    # trendpower-py at <repo>/trendpower/trendpower-py — same layout in
+    # any clone.
+    # Allow override via env var (e.g. for unusual layouts) but default
+    # to the standard layout.
+    repo_root = Path(__file__).resolve().parent.parent  # qumall-pool/.. = repo root
+    runner     = Path(os.environ.get("QUMALL_RUNNER", repo_root / "bdd_ai_toolkit" / "resources" / "trendpower-headless" / "runner.py"))
+    trendpower_py = Path(os.environ.get("QUMALL_TRENDPOWER_PY", repo_root / "trendpower" / "trendpower-py"))
+    mcp_config = Path(os.environ.get("QUMALL_MCP_CONFIG", Path.home() / ".trendpower" / "mcp_servers.json"))
+
+    if not runner.exists():
+        raise FileNotFoundError(
+            f"runner.py not found at {runner}. "
+            f"Set QUMALL_RUNNER env var to its absolute path, or run worker.py "
+            f"from a full clone of the AutoGenesis repo (with bdd_ai_toolkit/resources/trendpower-headless/runner.py)."
+        )
+    if not trendpower_py.exists():
+        raise FileNotFoundError(
+            f"trendpower-py not found at {trendpower_py}. "
+            f"Set QUMALL_TRENDPOWER_PY env var to its absolute path."
+        )
+
     return [
-        "uv", "run", "--project", trendpower_py, "python", "-u", runner,
+        "uv", "run", "--project", str(trendpower_py), "python", "-u", str(runner),
         "--prompt", prompt,
-        "--cwd", cwd,
-        "--mcp-config", r"C:\Users\admin\.trendpower\mcp_servers.json",
+        "--cwd", str(repo_root),
+        "--mcp-config", str(mcp_config),
         "--run-id", run_id,
         "--skill", "qumall-fulltest",
     ]
@@ -232,6 +255,18 @@ def main() -> int:
     args = p.parse_args()
     worker_id = args.worker_id
     print(f"[worker {worker_id}] started at {_now_iso()}", flush=True)
+
+    # Fail-fast: if the runner isn't where we expect, the worker will
+    # just claim + fail + loop forever. Tell the user the actual missing
+    # path up front instead.
+    try:
+        _build_runner_command(
+            {"job_id": "smoke", "module": "smoke", "first_row": 1, "last_row": 1, "total": 0, "row_list": []},
+            f"{worker_id}_smoke",
+        )
+    except FileNotFoundError as e:
+        print(f"[worker {worker_id}] FATAL: {e}", flush=True)
+        return 2
 
     jobs_done = 0
     consecutive_idle = 0
