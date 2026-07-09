@@ -69,6 +69,12 @@ STATUS_DIR_FMT  = os.path.join(POOL_ROOT, STATUS_DIR)
 # Local Edge profile (each machine should have qumall logged in here).
 EDGE_USER_DATA_DIR = r"C:\Users\admin\.trendpower\qumall-profile"
 
+# The actual qumall admin URL. The worker prompt passes this verbatim to
+# the agent so it does NOT confuse chrome-devtools-mcp's startup tab
+# (http://localhost:30081/) with the qumall site. Override per
+# environment via QUMALL_TARGET_URL env var.
+QUMALL_TARGET_URL = os.environ.get("QUMALL_TARGET_URL", "https://admin.qumall.qushiyun.com/")
+
 # qumall login (used if the local Edge isn't logged in).
 # These ARE in the file as placeholder defaults — they match the QA's test
 # credential, not a personal account. Override via env var if your environment
