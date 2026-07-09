@@ -71,6 +71,8 @@ def _import_cases(db: Path, cases: list[dict], preserve_results: bool) -> tuple[
         for case in cases:
             # dump_queue JSON shape: {row, id, module, function, subfunction,
             # title, preconditions, test_data, steps, expected}.
+            # NOTE: `id` is NOT unique (e.g. test_001 recurs in 登录 and 基础功能).
+            # We use sheet_row as the natural primary key.
             row = int(case["row"])
             case_id = str(case.get("id") or f"row{row}")
             if preserve_results:
@@ -82,8 +84,8 @@ def _import_cases(db: Path, cases: list[dict], preserve_results: bool) -> tuple[
                         (id, sheet_row, module, function, subfunction, title,
                          preconditions, test_data, steps, expected)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(id) DO UPDATE SET
-                        sheet_row     = excluded.sheet_row,
+                    ON CONFLICT(sheet_row) DO UPDATE SET
+                        id            = excluded.id,
                         module        = excluded.module,
                         function      = excluded.function,
                         subfunction   = excluded.subfunction,
@@ -130,10 +132,8 @@ def _import_cases(db: Path, cases: list[dict], preserve_results: bool) -> tuple[
                     ),
                 )
         conn.commit()
-        # Tally inserted vs updated (sqlite's rowcount on executemany is
-        # sqlite version dependent; do a quick second pass for accuracy).
         inserted = conn.execute("SELECT COUNT(*) FROM cases").fetchone()[0]
-        updated = 0  # we don't track per-row diff here; stats command can break it down
+        updated = 0
     return inserted, updated
 
 
