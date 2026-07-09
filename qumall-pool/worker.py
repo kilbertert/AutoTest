@@ -323,6 +323,17 @@ def main() -> int:
         jobs_done += 1
         print(f"[worker {worker_id}] finished {result['job_id']}: ok={result['ok']} stats={result.get('stats')}")
 
+        # Auto-regenerate the pool report after every job so any operator
+        # can read the latest run status from the share without invoking
+        # status.py manually.
+        try:
+            import status as _status
+            _status.main()
+        except SystemExit:
+            pass
+        except Exception as e:
+            print(f"[worker {worker_id}] report write failed: {e}", flush=True)
+
     return 0
 
 

@@ -10,11 +10,15 @@ Reads:
   - status/        → per-worker latest progress snapshot
 
 Prints a single human-readable summary + machine-readable JSON to stdout.
+Also writes a Markdown report to REPORT.md on the share, so any
+operator can read the latest run status without re-running this script.
 """
 
 from __future__ import annotations
 
+import datetime
 import json
+import os
 import sqlite3
 import sys
 from collections import defaultdict
@@ -22,6 +26,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import config
+
+
+REPORT_MD   = os.path.join(config.POOL_ROOT, "REPORT.md")
+REPORT_JSON = os.path.join(config.POOL_ROOT, "REPORT.json")
 
 
 def _read_status_files(status_dir: str) -> dict[str, dict]:
@@ -91,6 +99,105 @@ def _scan_failed(failed_dir: str) -> list[dict]:
     return out
 
 
+def _write_markdown_report(summary: dict) -> str:
+    """Render summary as a Markdown report, write to REPORT.md, return the path."""
+    bs = summary["db"].get("by_status", {}) if summary["db"].get("ok") else {}
+    total     = summary["db"].get("total", 0)
+    passed    = bs.get("通过", 0)
+    failed    = bs.get("失败", 0)
+    skipped   = bs.get("跳过", 0)
+    pending_n = bs.get("(pending)", 0)
+    finished  = passed + failed + skipped
+    pct = (100.0 * passed / finished) if finished else 0.0
+
+    lines = []
+    lines.append("# qumall-pool 运行报告")
+    lines.append("")
+    lines.append(f"_生成时间: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}_  ")
+    lines.append(f"共享根: `{config.POOL_ROOT}`")
+    lines.append("")
+    lines.append("## 全局汇总")
+    lines.append("")
+    lines.append("| 指标 | 值 |")
+    lines.append("|---|---|")
+    lines.append(f"| 总用例 | {total} |")
+    if total:
+        lines.append(f"| 已完成 | {finished} ({100.0 * finished / total:.1f}%) |")
+    else:
+        lines.append("| 已完成 | 0 |")
+    lines.append(f"| **通过** | **{passed}** ({pct:.1f}%) |")
+    lines.append(f"| 失败 | {failed} |")
+    lines.append(f"| 跳过 | {skipped} |")
+    lines.append(f"| 未跑 | {pending_n} |")
+    lines.append("")
+    lines.append("## 任务池状态")
+    lines.append("")
+    j = summary["jobs"]
+    lines.append(f"- pending: **{j['pending']}** 个 job 等待 claim")
+    lines.append(f"- claimed: {j['claimed']} 个 job 正在跑")
+    lines.append(f"- done: **{j['done']}** 个 job 已完成")
+    lines.append(f"- failed: {j['failed']} 个 job 跑失败")
+    lines.append("")
+
+    if summary["workers"]:
+        lines.append("## 当前活跃 worker")
+        lines.append("")
+        lines.append("| worker | claimed | jobs |")
+        lines.append("|---|---|---|")
+        for w, info in summary["workers"].items():
+            lines.append(f"| `{w}` | {info['claimed_count']} | {', '.join(info['claimed_jobs'])} |")
+        lines.append("")
+
+    if summary["db"].get("by_module"):
+        lines.append("## 按模块结果")
+        lines.append("")
+        lines.append("| 模块 | 总数 | 通过 | 失败 | 跳过 | 未跑 | 通过率 |")
+        lines.append("|---|---|---|---|---|---|---|")
+        for m in summary["db"]["by_module"]:
+            t, p, f, s, pe = m["total"], m["passed"], m["failed"], m["skipped"], m["pending"]
+            finish = p + f + s
+            pr = (100.0 * p / finish) if finish else 0.0
+            lines.append(f"| {m['module']} | {t} | {p} | {f} | {s} | {pe} | {pr:.1f}% |")
+        lines.append("")
+
+    if summary["db"].get("top_failures"):
+        lines.append("## Top 失败原因")
+        lines.append("")
+        for tf in summary["db"]["top_failures"]:
+            lines.append(f"- ({tf['n']}x) {tf['note']}")
+        lines.append("")
+
+    if summary["done_jobs"]:
+        lines.append("## 已完成 job 详情")
+        lines.append("")
+        for d in summary["done_jobs"]:
+            lines.append(f"### {d['module']} (`{d['job_id']}`)")
+            lines.append("")
+            stats = d.get("stats", {})
+            if stats:
+                lines.append("```")
+                for k, v in stats.items():
+                    lines.append(f"  {k}: {v}")
+                lines.append("```")
+            else:
+                lines.append("_(无 stats)_")
+            lines.append("")
+
+    if summary["failed_jobs"]:
+        lines.append("## 失败 job 详情")
+        lines.append("")
+        for d in summary["failed_jobs"]:
+            err = d.get("error", "")
+            lines.append(f"- **{d['module']}** (`{d['job_id']}`): {err}")
+        lines.append("")
+
+    md = "\n".join(lines)
+    Path(REPORT_MD).parent.mkdir(parents=True, exist_ok=True)
+    Path(REPORT_MD).write_text(md, encoding="utf-8")
+    Path(REPORT_JSON).write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+    return REPORT_MD
+
+
 def main() -> int:
     pending   = _scan_pending(config.PENDING_JOBS)
     claimed   = _scan_jobs(config.CLAIMED_JOBS)
@@ -103,8 +210,6 @@ def main() -> int:
     db_path = Path(config.DB_PATH)
     if db_path.exists():
         try:
-            # Read-only URI on Windows requires backslash in URI; skip URI
-            # and just open normally — we only do SELECTs.
             conn = sqlite3.connect(str(db_path))
             conn.row_factory = sqlite3.Row
             total = conn.execute("SELECT COUNT(*) AS n FROM cases").fetchone()["n"]
@@ -175,8 +280,17 @@ def main() -> int:
         print("active workers:")
         for w, info in summary["workers"].items():
             print(f"  {w}: {info['claimed_count']} job(s) — {', '.join(info['claimed_jobs'])}")
-    print()
+
+    # Write the Markdown report to the share.
+    try:
+        report_path = _write_markdown_report(summary)
+        print(f"\nreport: {report_path}")
+        print(f"        (open in any text editor; updates each time you run status.py)")
+    except Exception as e:
+        print(f"\n!! failed to write report: {e}")
+
     # Also dump the full JSON to stdout for machine consumers.
+    print()
     print("---JSON---")
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     return 0
