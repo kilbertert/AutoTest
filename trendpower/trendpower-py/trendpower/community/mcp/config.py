@@ -126,7 +126,9 @@ def load_servers_from_file(path: Path | str) -> List[MCPServerConfig]:
     p = Path(path)
     if not p.exists():
         return []
-    text = p.read_text(encoding="utf-8")
+    # utf-8-sig transparently strips a leading BOM (some Windows editors
+    # save UTF-8 with a BOM, which would otherwise break json.loads).
+    text = p.read_text(encoding="utf-8-sig")
     try:
         doc = json.loads(text)
     except json.JSONDecodeError as exc:

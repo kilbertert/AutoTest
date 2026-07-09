@@ -89,10 +89,24 @@ MODEL_BASE_URL = os.environ.get("TRENDPOWER_BASE_URL", "https://token-plan-cn.xi
 MODEL_API_KEY  = os.environ.get("OPENAI_API_KEY", "")
 
 if not MODEL_API_KEY:
+    _env_path = Path(__file__).resolve().parent.parent / ".env"
+    _env_status = "exists" if _env_path.exists() else "MISSING"
     raise RuntimeError(
-        "OPENAI_API_KEY env var is required. Set it before running the worker:\n"
-        "  set OPENAI_API_KEY=<your-mimo-api-key>\n"
-        "or drop a .env file in the repo root (see module docstring)."
+        f"OPENAI_API_KEY env var is required. .env at {_env_path}: {_env_status}.\n"
+        f"\n"
+        f"  Option 1 — create {_env_path} (recommended, auto-loaded):\n"
+        f'     @"',
+        f"     OPENAI_API_KEY=<your-mimo-api-key>",
+        f"     TRENDPOWER_PROVIDER=openai",
+        f"     TRENDPOWER_MODEL=mimo-v2.5-pro",
+        f"     TRENDPOWER_BASE_URL=https://token-plan-cn.xiaomimimo.com/v1",
+        f"     QUMALL_USERNAME=huitong",
+        f"     QUMALL_PASSWORD=<your-password>",
+        f'     "@ | Out-File -FilePath "{_env_path}" -Encoding utf8',
+        f"\n",
+        f"  Option 2 — set inline each time:",
+        f'     $env:OPENAI_API_KEY="<your-mimo-api-key>"',
+        f'     python qumall-pool\\worker.py --worker-id "host_X"',
     )
 
 # Per-job limits.
