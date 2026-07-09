@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>trendpower-web · agent loop 实时观察台</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500;600&display=swap" />
+<link rel="stylesheet" href="/assets/app.css" />
+</head>
+<body>
+
+<header class="masthead">
+  <div class="mast-left">
+    <h1 class="wordmark">
+      <span class="mark-pre">— </span>trendpower<span class="mark-dot">·</span>web<span class="mark-post"> —</span>
+    </h1>
+    <div class="tagline">大模型 agent loop 的实时现场记录</div>
+  </div>
+  <div class="mast-right">
+    <div id="state" class="state">连接中…</div>
+    <div class="counters">
+      <div class="counter">
+        <div class="counter-num" id="count-turn">0</div>
+        <div class="counter-label">提问</div>
+      </div>
+      <div class="counter-sep"></div>
+      <div class="counter">
+        <div class="counter-num" id="count-round">0</div>
+        <div class="counter-label">调用次数</div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+
+  <main id="main">
+
+    <section id="empty" class="empty">
+      <div class="empty-eyebrow">№ 1 · 引子</div>
+      <h2 class="empty-title">Agent，就是套在大模型外面的一个 <em>for 循环</em>。</h2>
+      <p class="empty-body">
+        大模型本身是<em>无状态</em>的：每次调用都是独立的一锤子买卖，模型并不"记得"上一次说过什么。
+        所谓"记忆"，全是工程拼出来的——每一轮，我们都把<em>到目前为止全部历史</em>加上<em>最近一次工具结果</em>
+        重新塞给模型，让它决定"再调一次工具"还是"给最终答案"。
+      </p>
+      <p class="empty-body">
+        下面每张卡片就是一次 LLM 调用：我们送进去了什么、它返回了什么、（如果它要调工具）工具又回了什么。
+        从第二轮起，输入里<span class="hl-inline">★ 黄色高亮</span>的就是<em>本轮新增进来</em>的内容——
+        这正是 agent "记住"上一轮工具结果的方式。
+      </p>
+      <div class="empty-hint">
+        <span class="empty-hint-bullet">▸</span>
+        在终端 TUI 里随便问一句话试试。比如
+        <code>列出当前目录文件并告诉我哪个最大</code>
+        会触发多轮 ReAct 循环。
+      </div>
+    </section>
+
+    <div id="turns" class="turns"></div>
+  </main>
+
+  <aside id="inspector" class="inspector">
+    <header class="inspector-head">
+      <div class="inspector-title">
+        <span class="inspector-eyebrow">完整输入文本</span>
+        <span class="inspector-target" id="inspector-target">尚无数据</span>
+      </div>
+      <div class="inspector-actions">
+        <button type="button" class="inspector-btn" id="inspector-follow" title="跟随最新轮">↻ 跟随</button>
+        <button type="button" class="inspector-btn" id="inspector-copy" title="复制全部文本">⧉ 复制</button>
+      </div>
+    </header>
+    <div class="inspector-hint" id="inspector-hint">
+      这里展示当前选中那一轮"真正喂给 LLM 的全部文本"——把 system prompt、消息历史、工具定义、调用参数按 LLM 实际看到的顺序拼起来。点击任何一张 Round 卡片可切换查看那一轮。
+    </div>
+    <pre class="inspector-body" id="inspector-body"></pre>
+  </aside>
+
+</div>
+
+<footer class="colophon">
+  <div class="legend">
+    <span class="legend-item"><span class="swatch swatch-input"></span> 输入</span>
+    <span class="legend-item"><span class="swatch swatch-llm"></span> 模型</span>
+    <span class="legend-item"><span class="swatch swatch-output"></span> 输出</span>
+    <span class="legend-item"><span class="swatch swatch-tool"></span> 工具</span>
+    <span class="legend-item"><span class="swatch swatch-new"></span> ★ 本轮新增</span>
+  </div>
+  <div class="colophon-byline">trendpower-web · SSE 实时直推 · 全部 payload 在调 SDK 之前截获</div>
+</footer>
+
+<section id="trace-panel" class="trace-panel collapsed">
+  <header class="trace-head" id="trace-toggle">
+    <span class="trace-title">⏱ 执行轨迹 trace</span>
+    <span class="trace-sub" id="trace-sub">等待运行…</span>
+    <span class="trace-collapse">▾</span>
+  </header>
+  <div class="trace-body" id="trace-body"></div>
+</section>
+
+<script src="/assets/app.js"></script>
+</body>
+</html>

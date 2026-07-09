@@ -1,10 +1,10 @@
 {
-  "name": "bdd-ai-toolkit",
-  "publisher": "liujingping",
-  "displayName": "BDD AI Toolkit",
-  "description": "AI-powered toolkit for debugging and managing BDD test cases in Cucumber/Gherkin format with intelligent code analysis",
-  "version": "1.5.2",
+  "name": "trendpower-shell",
+  "displayName": "Trendpower Shell",
+  "description": "VS Code shell that drives the trendpower ReAct agent for natural-language API/UI testing",
+  "version": "2.0.0",
   "icon": "resources/icon.png",
+  "publisher": "microsoft",
   "repository": {
     "type": "git",
     "url": "https://github.com/microsoft/AutoGenesis.git"
@@ -17,94 +17,43 @@
     "Testing"
   ],
   "activationEvents": [
-    "onLanguage:feature",
-    "workspaceContains:*.feature"
+    "*"
   ],
   "contributes": {
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "bdd-ai-toolkit-extension",
-          "title": "bdd ai toolkit",
+          "id": "trendpower-shell",
+          "title": "Trendpower",
           "icon": "resources/ai-robot-icon.svg"
         }
       ]
     },
     "views": {
-      "bdd-ai-toolkit-extension": [
+      "trendpower-shell": [
         {
           "type": "webview",
-          "id": "bdd-ai-toolkit-extension.setupView",
-          "name": "Setup panel",
+          "id": "trendpower-shell.sidebar",
+          "name": "Trendpower Sidebar",
           "icon": "resources/ai-robot-icon.svg"
         }
       ]
     },
-    "configuration": {
-      "title": "BDD AI Toolkit",
-      "properties": {
-        "bddAiToolkit.cucumber.copilotPrompt": {
-          "type": "string",
-          "default": "Please use native-mcp-server to execute the following instructions:\n\n# Original BDD Test Case (strictly follow step-by-step):\n${scenario_text}\n\nRequirements:\nfeature_file = '${feature_file_path}'\n1. Before executing the first step, call `before_gen_code`, and after all steps are completed, sequentially call `preview_code_changes` and `confirm_code_change`.\n2. Execute **each step** exactly as written using native-mcp-server API calls, in order.\n3. **MANDATORY: For EVERY step, you MUST call an MCP tool. Never judge results by screenshots/snapshots alone.**\n4. **Do not modify, merge, skip, or add any step.** Do not lose bdd step keyword.\n5. Do not close browser",
-          "description": "Custom prompt to append when sending test cases to Copilot via the 'Send to Copilot' action. Use ${scenario_text} for scenario content and ${feature_file_path} for file path placeholders."
-        }
-      }
-    },
-    "languageModelTools": [
-      {
-        "name": "sendNaturalLanguageTask",
-        "tags": [
-          "testing",
-          "automation",
-          "natural-language"
-        ],
-        "toolReferenceName": "naturalLanguageTaskExecutor",
-        "displayName": "Natural Language Task Executor",
-        "modelDescription": "🤖 GENERATES FORMATTED MCP EXECUTION PROMPT: Creates a structured prompt that instructs Copilot to immediately execute automation tasks using native-mcp-server MCP tools. The response contains explicit instructions for Copilot to use MCP tools for every action, not just descriptions. After calling this tool, Copilot should immediately begin executing the formatted prompt using native-mcp-server tools.",
-        "canBeReferencedInPrompt": true,
-        "icon": "$(play)",
-        "inputSchema": {
-          "type": "object",
-          "properties": {
-            "taskDescription": {
-              "type": "string",
-              "description": "Natural language description of the testing task that will be converted into MCP execution instructions"
-            }
-          },
-          "required": [
-            "taskDescription"
-          ]
-        }
-      }
-    ],
-    "languages": [
-      {
-        "id": "feature",
-        "extensions": [
-          ".feature"
-        ],
-        "aliases": [
-          "Gherkin",
-          "Feature File",
-          "Cucumber"
-        ]
-      }
-    ],
     "commands": [
       {
-        "command": "bddAiToolkit.executeScenario",
-        "title": "Execute Cucumber Scenario",
-        "category": "BDD AI Toolkit"
+        "command": "trendpower-shell.openSidebar",
+        "title": "Open Trendpower Sidebar",
+        "category": "Trendpower"
       },
       {
-        "command": "bddAiToolkit.diagnoseFeatureFile",
-        "title": "Diagnose Feature File Recognition",
-        "category": "BDD AI Toolkit"
+        "command": "trendpower-shell.runPrompt",
+        "title": "Run Prompt in Trendpower",
+        "category": "Trendpower"
       },
       {
-        "command": "bddAiToolkit.executeNaturalLanguageTask",
-        "title": "Execute Natural Language Task",
-        "category": "BDD AI Toolkit"
+        "command": "trendpower-shell.cancelRun",
+        "title": "Cancel Running Prompt",
+        "category": "Trendpower"
       }
     ],
     "keybindings": []
@@ -118,29 +67,14 @@
     "package": "npm run compile && vsce package",
     "watch-tests": "tsc -p . --outDir out --watch",
     "pretest": "npm run compile",
-    "package-vsix": "node scripts/package-vsix.js",
     "format": "prettier --write \"src/**/*.{ts,js,json}\""
   },
-  "dependencies": {
-    "@vscode/prompt-tsx": "^0.3.0-alpha.12",
-    "adm-zip": "^0.5.16",
-    "axios": "^1.9.0",
-    "js-yaml": "^4.1.0",
-    "xmind-sdk": "^1.2.5",
-    "xml2js": "^0.6.2"
-  },
+  "dependencies": {},
   "devDependencies": {
-    "@playwright/mcp": "0.0.13",
-    "@playwright/test": "^1.52.0",
-    "@types/adm-zip": "^0.5.7",
-    "@types/js-yaml": "^4.0.9",
     "@types/node": "^20",
     "@types/vscode": "^1.95.0",
-    "@types/xml2js": "^0.4.14",
-    "generator-code": "^1.11.8",
     "prettier": "^3.5.3",
     "typescript": "^5.8.3",
-    "vsce": "^1.87.0",
-    "yo": "^4.3.1"
+    "vsce": "^1.87.0"
   }
 }

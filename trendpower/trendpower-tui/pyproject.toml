@@ -1,0 +1,39 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "trendpower-tui"
+version = "0.1.0"
+description = "Terminal UI for trendpower — Textual-based TUI for the trendpower agent loop."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+  # The core agent loop (sibling package).
+  "trendpower",
+  # TUI framework — Textual is Python's closest equivalent to Ink/React.
+  "textual>=0.79.0",
+  # Markdown / rich text rendering inside Textual widgets.
+  "rich>=13.7.0",
+  # CLI subcommand parser — equivalent of `commander` (TS).
+  "click>=8.1.0",
+  # Runtime validation for config/settings schemas.
+  "pydantic>=2.6.0",
+  # YAML config files (skills frontmatter is already handled by trendpower core).
+  "pyyaml>=6.0",
+  # Atomic JSON settings writes (built-in `json` + tmp file pattern is fine too).
+]
+
+[project.scripts]
+trendpower = "trendpower_tui.__main__:main"
+
+[tool.uv.sources]
+trendpower = { path = "../trendpower-py", editable = true }
+
+[project.optional-dependencies]
+# Browser-rendered version of the same TUI, via Textual's built-in `textual serve`.
+web = []
+
+[tool.hatch.build.targets.wheel]
+packages = ["trendpower_tui"]

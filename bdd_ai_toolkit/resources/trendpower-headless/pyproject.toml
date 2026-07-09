@@ -1,0 +1,20 @@
+[project]
+name = "trendpower-headless-runner"
+version = "0.1.0"
+description = "Subprocess entry point for the bdd_ai_toolkit VS Code shell"
+requires-python = ">=3.10"
+dependencies = [
+    # trendpower is installed editable at the repo source. uv resolves it
+    # via the parent's `tool.uv.sources` configuration (see README.md).
+    "trendpower",
+]
+
+[tool.uv.sources]
+# Path is relative to this pyproject.toml's parent dir
+# (bdd_ai_toolkit/resources/trendpower-headless/).
+# Layout: bdd_ai_toolkit/ and trendpower/ are siblings under AutoGenesis/.
+trendpower = { path = "../../../trendpower/trendpower-py", editable = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

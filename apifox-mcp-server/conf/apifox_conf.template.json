@@ -1,0 +1,36 @@
+{
+  "_comment": "Apifox MCP server runtime config. Most settings come from env vars set in trendpower's mcp_servers.json. This file is for reference only.",
+  "env_required": {
+    "APIFOX_ACCESS_TOKEN": "Apifox access token (prefix APS-), from 个人设置 → API 访问令牌",
+    "APIFOX_PROJECT_ID": "Default Apifox project ID (the last path segment of the project URL)"
+  },
+  "env_optional": {
+    "APIFOX_DEFAULT_ENVIRONMENT_ID": "Default environment ID for apifox run (-e flag)"
+  },
+  "prerequisites": {
+    "node_js": ">= 14.20.1",
+    "apifox_cli": "npm i -g apifox-cli  (国内镜像: --registry=https://registry.npmmirror.com/)"
+  },
+  "mcp_servers_json_entry": {
+    "apifox-mcp": {
+      "transport": "stdio",
+      "command": "uv",
+      "args": [
+        "run",
+        "--project",
+        "D:/workspace/project/auto-test/AutoGenesis/apifox-mcp-server",
+        "python",
+        "D:/workspace/project/auto-test/AutoGenesis/apifox-mcp-server/simple_server.py",
+        "--transport",
+        "stdio"
+      ],
+      "env": {
+        "PYTHONIOENCODING": "utf-8",
+        "PYTHONUTF8": "1",
+        "APIFOX_ACCESS_TOKEN": "${APIFOX_ACCESS_TOKEN}",
+        "APIFOX_PROJECT_ID": "${APIFOX_PROJECT_ID}",
+        "APIFOX_DEFAULT_ENVIRONMENT_ID": "${APIFOX_DEFAULT_ENVIRONMENT_ID}"
+      }
+    }
+  }
+}

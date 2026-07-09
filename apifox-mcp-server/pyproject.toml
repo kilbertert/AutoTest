@@ -1,0 +1,25 @@
+[project]
+name = "apifox-mcp-server"
+version = "0.1.0"
+description = "MCP Server wrapping Apifox CLI for API discovery and regression (thin shell)"
+authors = [
+    {name = "AutoGenesis Team"}
+]
+requires-python = ">=3.10"
+dependencies = [
+  "mcp>=1.23.0",          # MCP SDK (FastMCP)
+  "pydantic>=2.0",        # 配置/参数校验
+]
+
+[tool.setuptools.packages.find]
+include = ["tools*", "utils*"]
+exclude = ["logs*", "conf*"]
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=6.0.0",
+]
+
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"

@@ -1,0 +1,14 @@
+{
+  "base_url": "https://api.tikhub.io",
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "auth": {
+    "type": "none",
+    "token": "",
+    "api_key": "",
+    "username": "",
+    "password": ""
+  },
+  "timeout": 30
+}

@@ -1,0 +1,26 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "trendpower-web"
+version = "0.1.0"
+description = "Terminal REPL + live web visualization of the exact prompt sent to the LLM on every turn."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+  "trendpower",
+  "trendpower-tui",
+  "aiohttp>=3.9",
+]
+
+[project.scripts]
+trendpower-web = "trendpower_web.cli:main"
+
+[tool.uv.sources]
+trendpower = { path = "../trendpower-py", editable = true }
+trendpower-tui = { path = "../trendpower-tui", editable = true }
+
+[tool.hatch.build.targets.wheel]
+packages = ["trendpower_web"]

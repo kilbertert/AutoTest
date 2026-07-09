@@ -1,152 +1,79 @@
-# BDD AI Toolkit
+# Trendpower Shell
 
-[![Version](https://img.shields.io/badge/version-1.2.43-blue.svg)](https://marketplace.visualstudio.com/)
-[![VS Code](https://img.shields.io/badge/VS%20Code-1.95.0+-007ACC.svg)](https://code.visualstudio.com/)
-[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+VS Code shell that drives the [trendpower](../../trendpower/) ReAct agent for
+natural-language API/UI testing. Type a prompt in the sidebar, watch the agent
+think, call MCP tools (`pywinauto`, `api-mcp`, `apifox-mcp`, …), and return a
+final answer.
 
-AI-powered VS Code extension for BDD test automation. **Record** test scenarios with AI assistance and **Replay** them instantly - no manual coding required!
+> **No more writing `.feature` files.** No more "Send to Copilot" CodeLens. The
+> runner talks to your real MCP servers (registered in `~/.trendpower/`), not
+> to GitHub Copilot Chat.
 
-## ✨ Features
+## Quick start
 
-- 🎥 **AI-Powered Recording** - Write Gherkin scenarios, let AI generate automation code
-- ▶️ **One-Click Replay** - Execute recorded scenarios directly from feature files
-- 🔧 **Multi-Platform Support** - Windows (browser), Appium (macOS & Mobile)
-- 🤖 **MCP Integration** - Seamless GitHub Copilot connection via Model Context Protocol
-- 🎯 **Interactive CodeLens** - Record and replay buttons above each scenario
-- 📝 **Natural Language Tasks** - Execute automation from plain English descriptions
+1. **Install the extension** (or run `npm run compile` and launch the dev host
+   with F5).
+2. **Make sure trendpower is reachable**: editable install of
+   `trendpower/trendpower-py` so `python -c "import trendpower"` succeeds.
+3. **Open the Trendpower activity-bar icon** — the sidebar shows three health
+   badges (`uv`, `trendpower`, MCP server count).
+4. **Type a prompt** in the input box and press `Run` (or `Ctrl+Enter`).
 
-> 👨‍💻 **For Developers**: See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and contribution guidelines.
+### Example prompt
 
----
-
-## 🚀 Setup Guide
-
-### Step 1: Install Extension
-
-Open VS Code Extensions (`Ctrl+Shift+X` / `Cmd+Shift+X`) → Search "BDD AI Toolkit" → Install
-
-### Step 2: Setup Environment
-
-1. **Open Setup Panel**
-   
-   Click the BDD AI Toolkit icon in the Activity Bar (left sidebar)
-
-2. **Auto-Resolve Environment**
-   
-   The setup panel will automatically detect and resolve environment issues:
-   - Python installation
-   - Node.js installation
-   - Required dependencies
-   
-   Click **"Auto-Resolve"** if any issues are detected
-
-3. **Choose Platform & Click Setup**
-   
-   Select your target platform:
-   - **Windows** - Browser automation
-   - **Appium** - For macOS and mobile testing (iOS/Android)
-   
-   Click **"Setup"** button to configure the selected platform
-
-   > **macOS users**: Before using Appium, you need to manually start the Appium server first. Run the provided script:
-   > ```bash
-   > cd appium-mcp-server/docs
-   > ./start_appium_on_mac.sh
-   > ```
-   > For detailed setup instructions, see [macOS Appium Setup Guide](../appium-mcp-server/docs/macOS_Appium_Setup_Guide.md).
-
-4. **Configure Automation Platform**
-   
-   Open `bdd_ai_conf.json` in the project root and update the configuration for your target platform, such as:
-   - Account credentials (e.g. BrowserStack `userName`, `accessKey`)
-   - App `bundleId` or `appPackage`/`appActivity`
-   - Device name, platform version, etc.
-
-5. **Open MCP Configuration File**
-   
-   Click **"Open"** button to view/edit the MCP configuration file
-   
-   The config file will be opened in the editor
-
-6. **Start MCP Server**
-   
-   In the opened configuration file, click the **"Start"** button (CodeLens action)
-   
-   This launches the MCP server
-
-7. **Verify Connection in GitHub Copilot**
-   
-   - Open GitHub Copilot Chat
-   - Check MCP connections panel
-   - Confirm "BDD AI Toolkit MCP" is connected
-
-### Step 3: Record & Replay
-
-Now you're ready to use AI-powered test automation!
-
-**Recording** (AI generates code):
-1. Create/open a `.feature` file
-2. Write your scenario in Gherkin
-3. Click **"Send to Copilot"** above the scenario
-4. AI generates automation code automatically
-
-> If `.github/skills/autoGenesis-run/SKILL.md` exists in the workspace, the extension sends `/autoGenesis-run <Scenario Name>` to Copilot instead of the default prompt.
-
-**Replaying** (Execute tests):
-1. Open a `.feature` file with recorded scenarios
-2. Click **"Run"** above any scenario
-3. Watch the automation execute!
-
----
-
-## 🎯 Advanced Features
-
-### Natural Language Tasks
-
-Execute ad-hoc automation without writing scenarios:
-
-**Command**: `BDD AI Toolkit: Execute Natural Language Task`
-
-**Example**: 
 ```
-"Open Chrome, go to google.com, search for 'AI testing', click first result"
+看看 Apifox Tikhub 项目里有哪些 health 相关的接口，测一下健康检查接口
 ```
 
-AI converts your description to automation and executes immediately.
+The agent will:
+1. `apifox_list_endpoints(path_contains="health")` → list endpoints
+2. `apifox_get_endpoint_detail(...)` → fetch contract
+3. `api-mcp.set_base_url(...)` / `http_get(...)` / `assert_status(200)` → run
+4. Stream the final answer back into the sidebar.
 
-### Custom Copilot Prompt
+## Configuration
 
-Customize how AI generates code:
+Everything lives in `~/.trendpower/`:
 
-```json
-{
-  "bddAiToolkit.cucumber.copilotPrompt": "Generate step definitions for:\n\n${scenario_text}\n\nFile: ${feature_file_path}\n\nUse Behave framework and follow PEP 8 style."
-}
+| Path | What |
+|---|---|
+| `mcp_servers.json` | MCP servers (pywinauto / api-mcp / apifox-mcp) |
+| `OPENAI_API_KEY` env | OpenAI provider API key |
+| `ANTHROPIC_API_KEY` env | Anthropic provider API key |
+| `TRENDPOWER_MODEL` env | Override model name |
+| `TRENDPOWER_PROVIDER` env | `openai` (default) or `anthropic` |
+
+Click **"Open ~/.trendpower"** in the sidebar footer to jump there.
+
+## What changed vs the old BDD AI Toolkit
+
+This is **v2.0.0** — a complete rewrite. Gone:
+
+- ❌ Gherkin parsing / `.feature` file support
+- ❌ "Send to Copilot" CodeLens
+- ❌ Auto-generate pytest step definitions
+- ❌ MS Copilot Chat fallback
+- ❌ Bundling MCP server source into the extension
+- ❌ `bdd_ai_conf.json` configuration scaffolding
+
+In:
+
+- ✅ Subprocess runner (`resources/trendpower-headless/runner.py`) speaks
+  NDJSON on stdout
+- ✅ Chat-like sidebar with streaming event log
+- ✅ Health badges (`uv` / `trendpower` / MCP server count)
+- ✅ One source of truth for everything: `~/.trendpower/`
+
+## Development
+
+```bash
+cd bdd_ai_toolkit
+npm install
+npm run compile          # tsc + copy resources + copy webview script
 ```
 
-**Available placeholders**:
-- `${scenario_text}` - Full scenario content
-- `${feature_file_path}` - Path to feature file
+Launch with F5 in VS Code (Extension Development Host).
 
-> **Note**: This prompt is used as fallback when the `autoGenesis-run` skill is not present in the workspace.
+## License
 
----
-
-
-
-## 📚 Resources
-
-- 🐛 [Report Issues](https://github.com/microsoft/vscode-extension-samples/issues)
-- 💡 [Feature Requests](https://github.com/microsoft/vscode-extension-samples/discussions)
-- 📖 [Gherkin Syntax Guide](https://cucumber.io/docs/gherkin/)
-- 📖 [Behave Documentation](https://behave.readthedocs.io/)
-
----
-
-## 📄 License
-
-MIT License - See [LICENSE](LICENSE)
-
----
-
-**Happy Testing! 🎉**
+MIT

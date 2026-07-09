@@ -1,0 +1,200 @@
+/* trendpower TUI theme.
+ *
+ * Palette
+ * -------
+ * Canvas     #0e1014   - app background
+ * Panel      #161a20   - inset cards
+ * Boost      #1d242c   - elevated surface (focused input, hover)
+ * Border     #2a3340   - subtle line
+ * Text       #d9e1e8   - default fg
+ * Dim        #8fa0ad   - secondary fg
+ *
+ * Brand      #5d7cf5   - primary (trendpower blue)
+ * Warm       #f3c969   - warning/spinner accent
+ * User       #ff7eb6   - magenta speaker bar
+ * Assist     #6fd6ff   - cyan assistant bar / focus
+ * Tool       #c8a8ff   - lavender tool icon
+ * Success    #7cd992   - green done
+ * Danger     #ff8b8b   - red error
+ */
+
+Screen {
+    background: #0e1014;
+    color: #d9e1e8;
+}
+
+/* ── Brand header (top) ─────────────────────────────────────────── */
+
+#brand {
+    height: 3;
+    padding: 0 2;
+    border: round #5d7cf5;
+    background: #0e1014;
+    layout: horizontal;
+}
+#brand-left {
+    width: 1fr;
+    content-align: left middle;
+    color: #d9e1e8;
+}
+#brand-right {
+    width: auto;
+    content-align: right middle;
+    color: #8fa0ad;
+}
+
+/* ── Main split (left = steps, right = code panel) ──────────────── */
+
+#main {
+    height: 1fr;
+    layout: horizontal;
+}
+#left {
+    width: 1fr;
+    height: 1fr;
+}
+
+/* ── Transcript ─────────────────────────────────────────────────── */
+
+#history {
+    height: 1fr;
+    padding: 1 2;
+    border: round #2a3340;
+    background: #0e1014;
+    scrollbar-color: #2a3340;
+    scrollbar-color-hover: #5d7cf5;
+}
+
+/* ── Code panel (right) ─────────────────────────────────────────── */
+
+#code {
+    width: 1fr;
+    height: 1fr;
+    margin-left: 1;
+    padding: 0 1;
+    border: round #5d7cf5;
+    background: #0e1014;
+}
+#code-title {
+    height: 1;
+    color: #c8a8ff;
+    text-style: bold;
+}
+#file-list {
+    height: 8;
+    margin-bottom: 1;
+    border: round #2a3340;
+    background: #161a20;
+    scrollbar-color: #2a3340;
+    scrollbar-color-hover: #5d7cf5;
+}
+#file-list > ListItem {
+    padding: 0 1;
+    color: #d9e1e8;
+}
+#file-list > ListItem.--highlight {
+    background: #1d242c;
+    color: #6fd6ff;
+}
+#code-editor {
+    height: 1fr;
+    border: round #2a3340;
+    background: #161a20;
+}
+#code-actions {
+    height: 3;
+    layout: horizontal;
+    align: right middle;
+}
+#code-status {
+    width: 1fr;
+    content-align: left middle;
+    color: #8fa0ad;
+}
+#code-save {
+    width: auto;
+}
+
+/* ── Todo panel ─────────────────────────────────────────────────── */
+
+#todos {
+    max-height: 10;
+    padding: 0 2;
+    margin-top: 1;
+    border: round #2a3340;
+    background: #161a20;
+    color: #d9e1e8;
+}
+
+/* ── Streaming indicator ────────────────────────────────────────── */
+
+#streaming {
+    height: 1;
+    padding: 0 2;
+    background: #0e1014;
+    layout: horizontal;
+}
+#streaming-left {
+    width: 1fr;
+    content-align: left middle;
+    color: #f3c969;
+}
+#streaming-right {
+    width: auto;
+    content-align: right middle;
+    color: #8fa0ad;
+}
+
+/* ── Slash command palette ──────────────────────────────────────── */
+
+#commands {
+    max-height: 9;
+    padding: 0 2;
+    margin-top: 1;
+    border: round #5d7cf5;
+    background: #161a20;
+    color: #d9e1e8;
+}
+
+/* ── Bottom-docked input slot ───────────────────────────────────── */
+/*
+ * Three siblings dock to the same bottom edge: status (innermost / lowest),
+ * then exactly one of approval-bar / ask-bar / input above it. They are
+ * yielded in the App's compose() in this order so status sits at the very
+ * bottom and the active prompt sits just above it.
+ */
+
+#status {
+    dock: bottom;
+    height: 1;
+    padding: 0 2;
+    background: #0e1014;
+    color: #8fa0ad;
+}
+
+#input {
+    dock: bottom;
+    height: 3;
+    padding: 0 2;
+    border: round #2a3340;
+    background: #161a20;
+    color: #d9e1e8;
+}
+#input:focus-within {
+    border: round #6fd6ff;
+    background: #1d242c;
+}
+
+#approval-bar {
+    dock: bottom;
+}
+#ask-bar {
+    dock: bottom;
+}
+
+/* ── Modal screens (FirstRunWizard, ModelManager) keep a dim overlay ── */
+
+FirstRunWizardScreen,
+ModelManagerScreen {
+    background: rgba(0, 0, 0, 0.55);
+}
