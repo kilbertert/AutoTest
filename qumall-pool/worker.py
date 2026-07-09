@@ -258,6 +258,7 @@ def _finalize_job(job: dict, worker_id: str) -> None:
 
 def main() -> int:
     import argparse
+    import shutil
     p = argparse.ArgumentParser(description="qumall-pool worker: claim + run + write-back")
     p.add_argument("--worker-id", default=claim.get_worker_id())
     p.add_argument("--max-jobs", type=int, default=0, help="0 = unlimited")
@@ -266,9 +267,20 @@ def main() -> int:
     worker_id = args.worker_id
     print(f"[worker {worker_id}] started at {_now_iso()}", flush=True)
 
-    # Fail-fast: if the runner isn't where we expect, the worker will
-    # just claim + fail + loop forever. Tell the user the actual missing
-    # path up front instead.
+    # Fail-fast prerequisites:
+    # 1) `uv` must be on PATH (the worker spawns `uv run --project <trendpower-py> python ...`).
+    # 2) The runner.py + trendpower-py must resolve from repo root.
+    uv_path = shutil.which("uv")
+    if uv_path is None:
+        print(
+            f"[worker {worker_id}] FATAL: 'uv' not found on PATH.\n"
+            f"  Install once:    irm https://astral.sh/uv/install.ps1 | iex\n"
+            f"  (PowerShell)     or  winget install --id=astral-sh.uv -e\n"
+            f"  After install, restart the shell so PATH is refreshed, then re-run worker.py.",
+            flush=True,
+        )
+        return 2
+
     try:
         _build_runner_command(
             {"job_id": "smoke", "module": "smoke", "first_row": 1, "last_row": 1, "total": 0, "row_list": []},
